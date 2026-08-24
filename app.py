@@ -29,8 +29,8 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"] 
     genai.configure(api_key=API_KEY)
     
-    # Listenden bulduğumuz en güçlü modeli ekledik
-    model = genai.GenerativeModel('gemini-2.5-pro')
+    # Google'ın bize hata mesajında tavsiye ettiği en yeni modeli kullanıyoruz!
+    model = genai.GenerativeModel('gemini-3.1-pro-preview')
 
     uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
 
