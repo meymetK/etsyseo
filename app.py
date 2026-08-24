@@ -4,7 +4,7 @@ from PIL import Image
 
 st.set_page_config(page_title="Etsy Asistanım", page_icon="✨", layout="wide")
 
-# --- Hafıza (Session State) Tanımlamaları ---
+# --- Hafıza (Session State) ---
 if "boyutlar" not in st.session_state:
     st.session_state.boyutlar = []
 
@@ -40,23 +40,30 @@ if check_password():
     
     API_KEY = st.secrets["GEMINI_API_KEY"] 
     genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel('gemini-3.5-flash')
+    
+    # YENİLİK 1: Temperature ayarını 0.9 yaparak yapay zekanın yaratıcılığını ve kelime çeşitliliğini artırdık
+    model = genai.GenerativeModel(
+        model_name='gemini-3.5-flash',
+        generation_config=genai.GenerationConfig(temperature=0.9)
+    )
 
-    # Ekranı Sol ve Sağ olarak bölüyoruz
     sol_sutun, sag_sutun = st.columns([1, 2], gap="large")
 
-    # ================= SOL SÜTUN (AYARLAR) =================
+    # ================= SOL SÜTUN =================
     with sol_sutun:
         st.header("1. Yükleme & Ayarlar")
         
         uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
-            
-            # Görseli en-boy oranını bozmadan en fazla 150x150 px boyutuna getiriyoruz
             image.thumbnail((150, 150))
             st.image(image, caption="Yüklenen Görsel")
             
+        st.markdown("---")
+        
+        # YENİLİK 2: Yapay zekaya ipucu vermek için "Ürün Nedir?" alanı eklendi
+        urun_tanimi = st.text_input("Bu ürün nedir? (Yapay zekaya ufak bir ipucu verin):", placeholder="Örn: Gelin arabası için beyaz vinil çıkartma...")
+        
         st.markdown("---")
         
         dil_secimi = st.radio("Hedef Pazar / Dil Seçimi", ["İngilizce (Etsy, Amazon)", "Türkçe (Trendyol, Shopier)"])
@@ -82,29 +89,42 @@ if check_password():
         st.markdown("---")
         uret_btn = st.button("✨ İçerikleri Üret", type="primary", use_container_width=True)
 
-    # ================= SAĞ SÜTUN (SONUÇLAR) =================
+    # ================= SAĞ SÜTUN =================
     with sag_sutun:
         st.header("2. Üretilen İçerikler")
         
         if uret_btn and uploaded_file is not None:
             with st.spinner(f"Görsel analiz ediliyor, {dil} dilinde içerikler yazılıyor..."):
                 try:
-                    boyut_metni = ""
+                    # İngilizce komutlar için dinamik değişkenleri hazırlıyoruz
+                    target_language = "ENGLISH" if dil == "İngilizce" else "TURKISH"
+                    
+                    product_hint = f"\nThe user describes this product as: '{urun_tanimi}'." if urun_tanimi else ""
+                    
+                    size_hint = ""
                     if len(st.session_state.boyutlar) > 0:
-                        boyut_metni = f"\nÜrünün boyut varyantları şunlardır: {', '.join(st.session_state.boyutlar)}. Bunu açıklamada liste halinde belirt."
+                        size_hint = f"\nThe available size variants are: {', '.join(st.session_state.boyutlar)}. Include these sizes as a clear list in the description."
 
+                    # YENİLİK 3: Tamamen İngilizce, kesin kurallı ve yaratıcılığa zorlayan Prompt
                     prompt = f"""
-                    Sen profesyonel bir e-ticaret SEO uzmanı ve metin yazarısın. Görseldeki el emeği atölye ürününü analiz et. 
-                    {boyut_metni}
+                    You are an expert e-commerce SEO specialist and a highly creative copywriter. Analyze the provided image of a handmade/custom-designed product.
+                    {product_hint}
+                    {size_hint}
                     
-                    Lütfen çıktıyı **{dil.upper()}** dilinde yaz ve tam olarak aşağıdaki GİZLİ AYRAÇLARI kullanarak bölümlere ayır. Başka hiçbir giriş cümlesi kurma.
-                    
+                    CRITICAL INSTRUCTIONS:
+                    1. Output Language: You MUST write the ENTIRE output (Title, Description, Tags) in {target_language}.
+                    2. Creativity & Variety: Do NOT use generic, repetitive boilerplate phrases. Craft a unique, engaging, and heartfelt story for the description. Use diverse vocabulary and vary your sentence structures to ensure the text stands out.
+                    3. Tone: Warm, trustworthy, highlighting the handmade/workshop nature of the item.
+                    4. Strict Format: You MUST use the exact bracketed tags below to separate the sections. Do not add any conversational filler before or after.
+
                     [BASLIK]
-                    Buraya SEO uyumlu başlık.
+                    Write a highly clickable, SEO-optimized e-commerce title here.
+
                     [ACIKLAMA]
-                    Buraya samimi açıklama metni.
+                    Write the engaging, unique, and SEO-friendly description here.
+
                     [ETIKETLER]
-                    Buraya 13 adet, aralarına virgül konmuş etiket. (KESİNLİKLE HER BİR ETİKET EN FAZLA 20 KARAKTER OLMALIDIR).
+                    Write exactly 13 SEO tags separated by commas. STRICT REQUIREMENT: EACH INDIVIDUAL TAG MUST BE 20 CHARACTERS OR LESS.
                     """
                     
                     response = model.generate_content([prompt, image])
@@ -120,14 +140,13 @@ if check_password():
                     for etiket in ham_etiketler.split(','):
                         etiket = etiket.strip()
                         if len(etiket) > 20:
-                            etiket = etiket[:20] # 20'den uzunsa tam oradan kes
+                            etiket = etiket[:20]
                         temiz_etiketler.append(etiket)
                     son_etiketler = ", ".join(temiz_etiketler)
 
                     if ekstra_not:
                         aciklama += f"\n\n---\n**Not:** {ekstra_not}"
 
-                    # Sonuçları okunaklı metin kutularında gösteriyoruz (Kaydırma çubuğu yok)
                     st.subheader("📌 Başlık")
                     st.text_area("Başlık", baslik, label_visibility="collapsed")
                     
@@ -137,10 +156,10 @@ if check_password():
                     st.subheader("🏷️ Etiketler")
                     st.text_area("Etiketler", son_etiketler, label_visibility="collapsed")
                         
-                    st.success("İşlem Tamam! Kutuların içine tıklayıp metni (Ctrl+A ve Ctrl+C ile) kolayca kopyalayabilirsiniz.")
+                    st.success("İşlem Tamam! Kutuların içine tıklayıp metni kolayca kopyalayabilirsiniz.")
 
                 except Exception as e:
-                    st.error("Bir hata oluştu veya yapay zeka metni doğru formatta bölmedi. Lütfen tekrar deneyin.")
+                    st.error("Bir hata oluştu. Lütfen görseli ve ayarları kontrol edip tekrar deneyin.")
         
         elif not uploaded_file:
             st.info("👈 Önce sol taraftan ürün görselini yükleyin ve ayarlarınızı yapın.")
