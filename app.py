@@ -54,19 +54,22 @@ if check_password():
     st.subheader("2. Ürün Boyutları Varyantları")
     st.text_input("Eklenecek boyutu yazıp Ekle butonuna basın (Örn: 35cm genişlik):", key="yeni_boyut_input")
     
-    col1, col2 = st.columns([1, 4]) # Butonları yan yana dizmek için kolon oluşturduk
+    col1, col2 = st.columns([1, 4])
     with col1:
         st.button("➕ Boyutu Ekle", on_click=boyut_ekle)
     with col2:
         if len(st.session_state.boyutlar) > 0:
             st.button("🗑️ Hepsini Temizle", on_click=boyutlari_temizle)
 
-    # Eklenen boyutları ekranda göster
     if st.session_state.boyutlar:
         st.success("✅ Eklenen Boyutlar: " + " | ".join(st.session_state.boyutlar))
 
-    # --- 3. Görsel Yükleme ve Üretim ---
-    st.subheader("3. Ürün Görseli")
+    # --- 3. Ekstra Notlar (Opsiyonel) ---
+    st.subheader("3. Ekstra Not (Opsiyonel)")
+    ekstra_not = st.text_area("İçeriğin en sonuna eklenecek özel notunuz (Örn: Kargo süresi, kişiselleştirme şartları vb.):", height=100)
+
+    # --- 4. Görsel Yükleme ve Üretim ---
+    st.subheader("4. Ürün Görseli")
     uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
 
     if uploaded_file is not None:
@@ -76,14 +79,13 @@ if check_password():
         if st.button("✨ İçerikleri Üret"):
             with st.spinner(f"Görsel analiz ediliyor, {dil} dilinde içerikler yazılıyor..."):
                 try:
-                    # Boyut metnini dinamik olarak hazırlıyoruz
                     boyut_metni = ""
                     if len(st.session_state.boyutlar) > 0:
-                        boyut_metni = f"\nÜrünün müşteriye sunulan boyut varyantları şunlardır: {', '.join(st.session_state.boyutlar)}. Lütfen bu boyut seçeneklerini açıklama kısmında, okunaklı bir liste halinde müşteriyi bilgilendirecek şekilde mutlaka belirt."
+                        boyut_metni = f"\nÜrünün müşteriye sunulan boyut varyantları şunlardır: {', '.join(st.session_state.boyutlar)}. Lütfen bu boyut seçeneklerini açıklama kısmında liste halinde belirt."
 
                     prompt = f"""
                     Sen profesyonel bir e-ticaret SEO uzmanı ve metin yazarısın. Görseldeki ana ürünü detaylıca analiz et. 
-                    Bu ürün kendi atölyemizden çıkan, el emeği ve kendi çizimlerimizden oluşan özel bir tasarım. (Özellikle beyaz vinil düğün arabası çıkartmaları, şık yeni doğan bebek kapı süsleri veya özenle hazırlanmış dekoratif objeler olabilir). 
+                    Bu ürün kendi atölyemizden çıkan, el emeği ve kendi çizimlerimizden oluşan özel bir tasarım.
                     {boyut_metni}
                     
                     ÖNEMLİ KURAL: Çıktının tamamını (Başlık, Açıklama ve Etiketler) **{dil.upper()}** dilinde yazacaksın.
@@ -92,12 +94,21 @@ if check_password():
                     
                     **BAŞLIK:** Ürünü anlatan, dikkat çekici ve SEO uyumlu bir e-ticaret başlığı.
                     
-                    **AÇIKLAMA:** Samimi bir dille, hikayesi olan, arama motorlarında organik bulunmayı sağlayacak anahtar kelimeler içeren metin. Müşteriye güven veren, atölye üretiminin doğallığını yansıtan bir dil kullan. 
+                    **AÇIKLAMA:** Samimi bir dille, hikayesi olan, arama motorlarında organik bulunmayı sağlayacak anahtar kelimeler içeren metin.
                     
                     **ETİKETLER (TAGS):** Tam olarak 13 adet, aralarına virgül konmuş etiket. Her bir etiket maksimum 20 karakter uzunluğunda olmalı.
                     """
                     response = model.generate_content([prompt, image])
                     st.success("İşlem Tamam!")
-                    st.markdown(response.text)
+                    
+                    # Nihai metni oluşturuyoruz
+                    nihai_metin = response.text
+                    
+                    # Eğer ekstra not yazıldıysa, bozmadan en sona ekliyoruz
+                    if ekstra_not:
+                        nihai_metin += f"\n\n---\n**Not:** {ekstra_not}"
+                        
+                    st.markdown(nihai_metin)
+                    
                 except Exception as e:
                     st.error(f"Bir hata oluştu: {e}")
