@@ -2,7 +2,8 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
-st.set_page_config(page_title="Etsy Asistanım", page_icon="✨")
+# Sayfanın daha ferah görünmesi için 'wide' (geniş) düzeni aktif ettik
+st.set_page_config(page_title="Etsy Asistanım", page_icon="✨", layout="wide")
 
 # --- Hafıza (Session State) Tanımlamaları ---
 if "boyutlar" not in st.session_state:
@@ -10,10 +11,9 @@ if "boyutlar" not in st.session_state:
 
 def boyut_ekle():
     yeni_boyut = st.session_state.yeni_boyut_input
-    # Eğer kutu boş değilse ve daha önce eklenmemişse listeye ekle
     if yeni_boyut and yeni_boyut not in st.session_state.boyutlar:
         st.session_state.boyutlar.append(yeni_boyut)
-    st.session_state.yeni_boyut_input = "" # Kutuyu temizle
+    st.session_state.yeni_boyut_input = "" 
 
 def boyutlari_temizle():
     st.session_state.boyutlar = []
@@ -37,78 +37,106 @@ def check_password():
 
 if check_password():
     st.title("🎨 Atölye - Ürün Yükleme Asistanı")
+    st.markdown("---")
     
     API_KEY = st.secrets["GEMINI_API_KEY"] 
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-3.5-flash')
 
-    # --- 1. Dil Seçimi ---
-    st.subheader("1. Hedef Pazar / Dil Seçimi")
-    dil_secimi = st.radio(
-        "İçerik hangi dilde yazılsın?",
-        ["İngilizce (Etsy, Amazon vb.)", "Türkçe (Trendyol, Hepsiburada, Shopier vb.)"]
-    )
-    dil = "İngilizce" if "İngilizce" in dil_secimi else "Türkçe"
+    # Ekranı Sol (1 birim) ve Sağ (2 birim) olarak bölüyoruz
+    sol_sutun, sag_sutun = st.columns([1, 2], gap="large")
 
-    # --- 2. Boyut Ekleme Alanı ---
-    st.subheader("2. Ürün Boyutları Varyantları")
-    st.text_input("Eklenecek boyutu yazıp Ekle butonuna basın (Örn: 35cm genişlik):", key="yeni_boyut_input")
-    
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        st.button("➕ Boyutu Ekle", on_click=boyut_ekle)
-    with col2:
-        if len(st.session_state.boyutlar) > 0:
-            st.button("🗑️ Hepsini Temizle", on_click=boyutlari_temizle)
+    # ================= SOL SÜTUN (AYARLAR) =================
+    with sol_sutun:
+        st.header("1. Yükleme & Ayarlar")
+        
+        uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
+        if uploaded_file is not None:
+            image = Image.open(uploaded_file)
+            st.image(image, caption="Yüklenen Görsel", use_container_width=True)
+            
+        st.markdown("---")
+        
+        dil_secimi = st.radio("Hedef Pazar / Dil Seçimi", ["İngilizce (Etsy, Amazon)", "Türkçe (Trendyol, Shopier)"])
+        dil = "İngilizce" if "İngilizce" in dil_secimi else "Türkçe"
+        
+        st.markdown("---")
+        
+        st.text_input("Eklenecek boyutu yazıp Ekle'ye basın:", key="yeni_boyut_input")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.button("➕ Boyut Ekle", on_click=boyut_ekle, use_container_width=True)
+        with c2:
+            if len(st.session_state.boyutlar) > 0:
+                st.button("🗑️ Temizle", on_click=boyutlari_temizle, use_container_width=True)
 
-    if st.session_state.boyutlar:
-        st.success("✅ Eklenen Boyutlar: " + " | ".join(st.session_state.boyutlar))
+        if st.session_state.boyutlar:
+            st.success("Boyutlar: " + " | ".join(st.session_state.boyutlar))
+            
+        st.markdown("---")
+        
+        ekstra_not = st.text_area("Ekstra Not (Opsiyonel):", height=80)
+        
+        st.markdown("---")
+        uret_btn = st.button("✨ İçerikleri Üret", type="primary", use_container_width=True)
 
-    # --- 3. Ekstra Notlar (Opsiyonel) ---
-    st.subheader("3. Ekstra Not (Opsiyonel)")
-    ekstra_not = st.text_area("İçeriğin en sonuna eklenecek özel notunuz (Örn: Kargo süresi, kişiselleştirme şartları vb.):", height=100)
 
-    # --- 4. Görsel Yükleme ve Üretim ---
-    st.subheader("4. Ürün Görseli")
-    uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
-
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Yüklenen Görsel", use_container_width=True)
-
-        if st.button("✨ İçerikleri Üret"):
+    # ================= SAĞ SÜTUN (SONUÇLAR) =================
+    with sag_sutun:
+        st.header("2. Üretilen İçerikler")
+        
+        if uret_btn and uploaded_file is not None:
             with st.spinner(f"Görsel analiz ediliyor, {dil} dilinde içerikler yazılıyor..."):
                 try:
                     boyut_metni = ""
                     if len(st.session_state.boyutlar) > 0:
-                        boyut_metni = f"\nÜrünün müşteriye sunulan boyut varyantları şunlardır: {', '.join(st.session_state.boyutlar)}. Lütfen bu boyut seçeneklerini açıklama kısmında liste halinde belirt."
+                        boyut_metni = f"\nÜrünün boyut varyantları şunlardır: {', '.join(st.session_state.boyutlar)}. Bunu açıklamada liste halinde belirt."
 
                     prompt = f"""
-                    Sen profesyonel bir e-ticaret SEO uzmanı ve metin yazarısın. Görseldeki ana ürünü detaylıca analiz et. 
-                    Bu ürün kendi atölyemizden çıkan, el emeği ve kendi çizimlerimizden oluşan özel bir tasarım.
+                    Sen profesyonel bir e-ticaret SEO uzmanı ve metin yazarısın. Görseldeki el emeği atölye ürününü analiz et. 
                     {boyut_metni}
                     
-                    ÖNEMLİ KURAL: Çıktının tamamını (Başlık, Açıklama ve Etiketler) **{dil.upper()}** dilinde yazacaksın.
+                    Lütfen çıktıyı **{dil.upper()}** dilinde yaz ve tam olarak aşağıdaki GİZLİ AYRAÇLARI kullanarak bölümlere ayır. Başka hiçbir giriş cümlesi kurma.
                     
-                    Bana şu formatta bir çıktı ver:
-                    
-                    **BAŞLIK:** Ürünü anlatan, dikkat çekici ve SEO uyumlu bir e-ticaret başlığı.
-                    
-                    **AÇIKLAMA:** Samimi bir dille, hikayesi olan, arama motorlarında organik bulunmayı sağlayacak anahtar kelimeler içeren metin.
-                    
-                    **ETİKETLER (TAGS):** Tam olarak 13 adet, aralarına virgül konmuş etiket. Her bir etiket maksimum 20 karakter uzunluğunda olmalı.
+                    [BASLIK]
+                    Buraya SEO uyumlu başlık.
+                    [ACIKLAMA]
+                    Buraya samimi açıklama metni.
+                    [ETIKETLER]
+                    Buraya 13 adet, aralarına virgül konmuş etiket.
                     """
+                    
                     response = model.generate_content([prompt, image])
-                    st.success("İşlem Tamam!")
                     
-                    # Nihai metni oluşturuyoruz
-                    nihai_metin = response.text
-                    
-                    # Eğer ekstra not yazıldıysa, bozmadan en sona ekliyoruz
+                    # Metni ayraçlardan bölüyoruz
+                    sonuc = response.text
+                    baslik = sonuc.split("[ACIKLAMA]")[0].replace("[BASLIK]", "").strip()
+                    kalan = sonuc.split("[ACIKLAMA]")[1]
+                    aciklama = kalan.split("[ETIKETLER]")[0].strip()
+                    etiketler = kalan.split("[ETIKETLER]")[1].strip()
+
                     if ekstra_not:
-                        nihai_metin += f"\n\n---\n**Not:** {ekstra_not}"
-                        
-                    st.markdown(nihai_metin)
+                        aciklama += f"\n\n---\n**Not:** {ekstra_not}"
+
+                    # Sağ tarafı kendi içinde 3 farklı sütuna bölüyoruz
+                    sonuc_col1, sonuc_col2, sonuc_col3 = st.columns(3)
                     
+                    with sonuc_col1:
+                        st.subheader("📌 Başlık")
+                        st.code(baslik, language="markdown")
+                        
+                    with sonuc_col2:
+                        st.subheader("📖 Açıklama")
+                        st.code(aciklama, language="markdown")
+                        
+                    with sonuc_col3:
+                        st.subheader("🏷️ Etiketler")
+                        st.code(etiketler, language="markdown")
+                        
+                    st.success("İşlem Tamam! Metin kutularının sağ üst köşesindeki ikona tıklayarak kopyalayabilirsiniz.")
+
                 except Exception as e:
-                    st.error(f"Bir hata oluştu: {e}")
+                    st.error("Bir hata oluştu veya yapay zeka metni doğru formatta bölmedi. Lütfen tekrar deneyin.")
+        
+        elif not uploaded_file:
+            st.info("👈 Önce sol taraftan ürün görselini yükleyin ve ayarlarınızı yapın.")
