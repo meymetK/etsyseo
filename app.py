@@ -14,7 +14,6 @@ def check_password():
         st.title("🔒 Giriş Yapın")
         pwd = st.text_input("Şifreniz:", type="password")
         if st.button("Giriş"):
-            # Şifremizi ayarlardan alıyoruz, yoksa '123456' kabul ediyor
             if pwd == st.secrets.get("APP_PASSWORD", "123456"): 
                 st.session_state["password_correct"] = True
                 st.rerun()
@@ -25,12 +24,13 @@ def check_password():
 
 if check_password():
     st.title("🎨 Atölye - Etsy Yükleme Asistanı")
-    st.markdown("Ürünün fotoğrafını yükle, gerisini bana bırak!")
+    st.markdown("O harika bebek odası kapı süslerinin veya araç çıkartmalarının fotoğrafını yükle, gerisini bana bırak!")
 
-    # API Anahtarını gizli ayarlardan alıyoruz
     API_KEY = st.secrets["GEMINI_API_KEY"] 
     genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    
+    # Yeni Pro modelini deniyoruz
+    model = genai.GenerativeModel('gemini-1.5-pro')
 
     uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
 
@@ -43,8 +43,7 @@ if check_password():
                 try:
                     prompt = """
                     Sen profesyonel bir Etsy SEO uzmanı ve metin yazarısın. Görseldeki ana ürünü detaylıca analiz et. 
-                    Bu ürün kendi atölyemizden çıkan özel bir tasarım (örneğin; özel bir araç çıkartması, bebek odası kapı süsü veya şık bir dekoratif obje olabilir). 
-                    Bana şu formatta bir çıktı ver:
+                    Bu ürün kendi atölyemizden çıkan özel bir tasarım. Bana şu formatta bir çıktı ver:
                     
                     **BAŞLIK:** Ürünü anlatan, dikkat çekici ve SEO uyumlu bir Etsy başlığı.
                     
@@ -57,3 +56,11 @@ if check_password():
                     st.markdown(response.text)
                 except Exception as e:
                     st.error(f"Bir hata oluştu: {e}")
+                    st.warning("Hesabında kullanılabilen modeller şunlar:")
+                    # Eğer hata verirse kullanılabilir modelleri ekrana yazdırır
+                    try:
+                        for m in genai.list_models():
+                            if 'generateContent' in m.supported_generation_methods:
+                                st.write(m.name)
+                    except:
+                        st.write("Modeller listelenemedi, API anahtarını kontrol et.")
