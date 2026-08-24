@@ -2,10 +2,23 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
-# Sayfa Ayarları
 st.set_page_config(page_title="Etsy Asistanım", page_icon="✨")
 
-# Şifre Ekranı
+# --- Hafıza (Session State) Tanımlamaları ---
+if "boyutlar" not in st.session_state:
+    st.session_state.boyutlar = []
+
+def boyut_ekle():
+    yeni_boyut = st.session_state.yeni_boyut_input
+    # Eğer kutu boş değilse ve daha önce eklenmemişse listeye ekle
+    if yeni_boyut and yeni_boyut not in st.session_state.boyutlar:
+        st.session_state.boyutlar.append(yeni_boyut)
+    st.session_state.yeni_boyut_input = "" # Kutuyu temizle
+
+def boyutlari_temizle():
+    st.session_state.boyutlar = []
+
+# --- Şifre Ekranı ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -23,32 +36,63 @@ def check_password():
     return True
 
 if check_password():
-    st.title("🎨 Atölye - Etsy Yükleme Asistanı")
-    st.markdown("Ürünün fotoğrafını yükle, gerisini bana bırak!")
-
+    st.title("🎨 Atölye - Ürün Yükleme Asistanı")
+    
     API_KEY = st.secrets["GEMINI_API_KEY"] 
     genai.configure(api_key=API_KEY)
-    
-    # Ücretsiz kotası çok geniş ve süper hızlı olan en yeni Flash modeline geçtik!
     model = genai.GenerativeModel('gemini-3.5-flash')
 
+    # --- 1. Dil Seçimi ---
+    st.subheader("1. Hedef Pazar / Dil Seçimi")
+    dil_secimi = st.radio(
+        "İçerik hangi dilde yazılsın?",
+        ["İngilizce (Etsy, Amazon vb.)", "Türkçe (Trendyol, Hepsiburada, Shopier vb.)"]
+    )
+    dil = "İngilizce" if "İngilizce" in dil_secimi else "Türkçe"
+
+    # --- 2. Boyut Ekleme Alanı ---
+    st.subheader("2. Ürün Boyutları Varyantları")
+    st.text_input("Eklenecek boyutu yazıp Ekle butonuna basın (Örn: 35cm genişlik):", key="yeni_boyut_input")
+    
+    col1, col2 = st.columns([1, 4]) # Butonları yan yana dizmek için kolon oluşturduk
+    with col1:
+        st.button("➕ Boyutu Ekle", on_click=boyut_ekle)
+    with col2:
+        if len(st.session_state.boyutlar) > 0:
+            st.button("🗑️ Hepsini Temizle", on_click=boyutlari_temizle)
+
+    # Eklenen boyutları ekranda göster
+    if st.session_state.boyutlar:
+        st.success("✅ Eklenen Boyutlar: " + " | ".join(st.session_state.boyutlar))
+
+    # --- 3. Görsel Yükleme ve Üretim ---
+    st.subheader("3. Ürün Görseli")
     uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
 
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
         st.image(image, caption="Yüklenen Görsel", use_container_width=True)
 
-        if st.button("✨ Başlık, Açıklama ve Etiketleri Üret"):
-            with st.spinner("Görsel analiz ediliyor, harika içerikler yazılıyor..."):
+        if st.button("✨ İçerikleri Üret"):
+            with st.spinner(f"Görsel analiz ediliyor, {dil} dilinde içerikler yazılıyor..."):
                 try:
-                    prompt = """
-                    Sen profesyonel bir Etsy SEO uzmanı ve metin yazarısın. Görseldeki ana ürünü detaylıca analiz et. 
+                    # Boyut metnini dinamik olarak hazırlıyoruz
+                    boyut_metni = ""
+                    if len(st.session_state.boyutlar) > 0:
+                        boyut_metni = f"\nÜrünün müşteriye sunulan boyut varyantları şunlardır: {', '.join(st.session_state.boyutlar)}. Lütfen bu boyut seçeneklerini açıklama kısmında, okunaklı bir liste halinde müşteriyi bilgilendirecek şekilde mutlaka belirt."
+
+                    prompt = f"""
+                    Sen profesyonel bir e-ticaret SEO uzmanı ve metin yazarısın. Görseldeki ana ürünü detaylıca analiz et. 
                     Bu ürün kendi atölyemizden çıkan, el emeği ve kendi çizimlerimizden oluşan özel bir tasarım. (Özellikle beyaz vinil düğün arabası çıkartmaları, şık yeni doğan bebek kapı süsleri veya özenle hazırlanmış dekoratif objeler olabilir). 
+                    {boyut_metni}
+                    
+                    ÖNEMLİ KURAL: Çıktının tamamını (Başlık, Açıklama ve Etiketler) **{dil.upper()}** dilinde yazacaksın.
+                    
                     Bana şu formatta bir çıktı ver:
                     
-                    **BAŞLIK:** Ürünü anlatan, dikkat çekici ve SEO uyumlu bir Etsy başlığı.
+                    **BAŞLIK:** Ürünü anlatan, dikkat çekici ve SEO uyumlu bir e-ticaret başlığı.
                     
-                    **AÇIKLAMA:** Samimi bir dille, hikayesi olan, arama motorlarında organik bulunmayı sağlayacak anahtar kelimeler içeren metin. Müşteriye güven veren, atölye üretiminin doğallığını yansıtan bir dil kullan.
+                    **AÇIKLAMA:** Samimi bir dille, hikayesi olan, arama motorlarında organik bulunmayı sağlayacak anahtar kelimeler içeren metin. Müşteriye güven veren, atölye üretiminin doğallığını yansıtan bir dil kullan. 
                     
                     **ETİKETLER (TAGS):** Tam olarak 13 adet, aralarına virgül konmuş etiket. Her bir etiket maksimum 20 karakter uzunluğunda olmalı.
                     """
