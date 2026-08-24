@@ -7,6 +7,8 @@ st.set_page_config(page_title="Etsy Asistanım", page_icon="✨", layout="wide")
 # --- Hafıza (Session State) ---
 if "boyutlar" not in st.session_state:
     st.session_state.boyutlar = []
+if "renkler" not in st.session_state:
+    st.session_state.renkler = []
 
 def boyut_ekle():
     yeni_boyut = st.session_state.yeni_boyut_input
@@ -16,6 +18,15 @@ def boyut_ekle():
 
 def boyutlari_temizle():
     st.session_state.boyutlar = []
+
+def renk_ekle():
+    yeni_renk = st.session_state.yeni_renk_input
+    if yeni_renk and yeni_renk not in st.session_state.renkler:
+        st.session_state.renkler.append(yeni_renk)
+    st.session_state.yeni_renk_input = ""
+
+def renkleri_temizle():
+    st.session_state.renkler = []
 
 # --- Şifre Ekranı ---
 def check_password():
@@ -41,7 +52,6 @@ if check_password():
     API_KEY = st.secrets["GEMINI_API_KEY"] 
     genai.configure(api_key=API_KEY)
     
-    # YENİLİK 1: Temperature ayarını 0.9 yaparak yapay zekanın yaratıcılığını ve kelime çeşitliliğini artırdık
     model = genai.GenerativeModel(
         model_name='gemini-3.5-flash',
         generation_config=genai.GenerationConfig(temperature=0.9)
@@ -61,8 +71,7 @@ if check_password():
             
         st.markdown("---")
         
-        # YENİLİK 2: Yapay zekaya ipucu vermek için "Ürün Nedir?" alanı eklendi
-        urun_tanimi = st.text_input("Bu ürün nedir? (Yapay zekaya ufak bir ipucu verin):", placeholder="Örn: Gelin arabası için beyaz vinil çıkartma...")
+        urun_tanimi = st.text_input("Bu ürün nedir? (İpucu):", placeholder="Örn: Gelin arabası için beyaz vinil çıkartma...")
         
         st.markdown("---")
         
@@ -71,17 +80,32 @@ if check_password():
         
         st.markdown("---")
         
+        # BOYUT ALANI
         st.text_input("Eklenecek boyutu yazıp Ekle'ye basın:", key="yeni_boyut_input")
         c1, c2 = st.columns(2)
         with c1:
             st.button("➕ Boyut Ekle", on_click=boyut_ekle, use_container_width=True)
         with c2:
             if len(st.session_state.boyutlar) > 0:
-                st.button("🗑️ Temizle", on_click=boyutlari_temizle, use_container_width=True)
+                st.button("🗑️ Temizle", on_click=boyutlari_temizle, key="temizle_boyut", use_container_width=True)
 
         if st.session_state.boyutlar:
             st.success("Boyutlar: " + " | ".join(st.session_state.boyutlar))
             
+        st.markdown("---")
+        
+        # RENK ALANI
+        st.text_input("Eklenecek rengi yazıp Ekle'ye basın:", key="yeni_renk_input")
+        c3, c4 = st.columns(2)
+        with c3:
+            st.button("➕ Renk Ekle", on_click=renk_ekle, use_container_width=True)
+        with c4:
+            if len(st.session_state.renkler) > 0:
+                st.button("🗑️ Temizle", on_click=renkleri_temizle, key="temizle_renk", use_container_width=True)
+
+        if st.session_state.renkler:
+            st.success("Renkler: " + " | ".join(st.session_state.renkler))
+
         st.markdown("---")
         
         ekstra_not = st.text_area("Ekstra Not (Opsiyonel):", height=80)
@@ -96,7 +120,6 @@ if check_password():
         if uret_btn and uploaded_file is not None:
             with st.spinner(f"Görsel analiz ediliyor, {dil} dilinde içerikler yazılıyor..."):
                 try:
-                    # İngilizce komutlar için dinamik değişkenleri hazırlıyoruz
                     target_language = "ENGLISH" if dil == "İngilizce" else "TURKISH"
                     
                     product_hint = f"\nThe user describes this product as: '{urun_tanimi}'." if urun_tanimi else ""
@@ -105,11 +128,15 @@ if check_password():
                     if len(st.session_state.boyutlar) > 0:
                         size_hint = f"\nThe available size variants are: {', '.join(st.session_state.boyutlar)}. Include these sizes as a clear list in the description."
 
-                    # YENİLİK 3: Tamamen İngilizce, kesin kurallı ve yaratıcılığa zorlayan Prompt
+                    color_hint = ""
+                    if len(st.session_state.renkler) > 0:
+                        color_hint = f"\nThe available color options are: {', '.join(st.session_state.renkler)}. Include these color options as a clear list in the description."
+
                     prompt = f"""
                     You are an expert e-commerce SEO specialist and a highly creative copywriter. Analyze the provided image of a handmade/custom-designed product.
                     {product_hint}
                     {size_hint}
+                    {color_hint}
                     
                     CRITICAL INSTRUCTIONS:
                     1. Output Language: You MUST write the ENTIRE output (Title, Description, Tags) in {target_language}.
@@ -135,7 +162,6 @@ if check_password():
                     aciklama = kalan.split("[ETIKETLER]")[0].strip()
                     ham_etiketler = kalan.split("[ETIKETLER]")[1].strip()
 
-                    # 20 Karakter Güvenlik Filtresi (Makas)
                     temiz_etiketler = []
                     for etiket in ham_etiketler.split(','):
                         etiket = etiket.strip()
