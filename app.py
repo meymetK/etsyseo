@@ -2,7 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
-# Sayfanın daha ferah görünmesi için 'wide' (geniş) düzeni aktif ettik
 st.set_page_config(page_title="Etsy Asistanım", page_icon="✨", layout="wide")
 
 # --- Hafıza (Session State) Tanımlamaları ---
@@ -43,7 +42,7 @@ if check_password():
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-3.5-flash')
 
-    # Ekranı Sol (1 birim) ve Sağ (2 birim) olarak bölüyoruz
+    # Ekranı Sol ve Sağ olarak bölüyoruz
     sol_sutun, sag_sutun = st.columns([1, 2], gap="large")
 
     # ================= SOL SÜTUN (AYARLAR) =================
@@ -53,7 +52,12 @@ if check_password():
         uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
-            st.image(image, caption="Yüklenen Görsel", use_container_width=True)
+            
+            # Görseli en-boy oranını bozmadan en fazla 150x150 px (yaklaşık 4-5 cm) boyutuna getiriyoruz
+            image.thumbnail((150, 150))
+            
+            # use_container_width=True ayarını kaldırdık ki görsel ekrana yayılmasın, küçük kalsın
+            st.image(image, caption="Yüklenen Görsel")
             
         st.markdown("---")
         
@@ -108,7 +112,6 @@ if check_password():
                     
                     response = model.generate_content([prompt, image])
                     
-                    # Metni ayraçlardan bölüyoruz
                     sonuc = response.text
                     baslik = sonuc.split("[ACIKLAMA]")[0].replace("[BASLIK]", "").strip()
                     kalan = sonuc.split("[ACIKLAMA]")[1]
@@ -118,20 +121,15 @@ if check_password():
                     if ekstra_not:
                         aciklama += f"\n\n---\n**Not:** {ekstra_not}"
 
-                    # Sağ tarafı kendi içinde 3 farklı sütuna bölüyoruz
-                    sonuc_col1, sonuc_col2, sonuc_col3 = st.columns(3)
+                    # Sonuçları alt alta daha okunaklı şekilde diziyoruz
+                    st.subheader("📌 Başlık")
+                    st.code(baslik, language="markdown")
                     
-                    with sonuc_col1:
-                        st.subheader("📌 Başlık")
-                        st.code(baslik, language="markdown")
-                        
-                    with sonuc_col2:
-                        st.subheader("📖 Açıklama")
-                        st.code(aciklama, language="markdown")
-                        
-                    with sonuc_col3:
-                        st.subheader("🏷️ Etiketler")
-                        st.code(etiketler, language="markdown")
+                    st.subheader("📖 Açıklama")
+                    st.code(aciklama, language="markdown")
+                    
+                    st.subheader("🏷️ Etiketler")
+                    st.code(etiketler, language="markdown")
                         
                     st.success("İşlem Tamam! Metin kutularının sağ üst köşesindeki ikona tıklayarak kopyalayabilirsiniz.")
 
