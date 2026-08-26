@@ -46,7 +46,7 @@ def check_password():
     return True
 
 if check_password():
-    st.title("🎨 Atölye - Ürün Yükleme Asistanı")
+    st.title("🎨 Atölye & Dijital - Ürün Yükleme Asistanı")
     st.markdown("---")
     
     API_KEY = st.secrets["GEMINI_API_KEY"] 
@@ -63,6 +63,12 @@ if check_password():
     with sol_sutun:
         st.header("1. Yükleme & Ayarlar")
         
+        # YENİLİK: Ürün Tipi Seçimi
+        urun_tipi_secimi = st.radio("📦 Ürün Tipi:", ["Fiziksel Ürün (Atölye)", "Dijital İndirme (Digital Download)"])
+        is_digital = "Dijital" in urun_tipi_secimi
+        
+        st.markdown("---")
+
         uploaded_file = st.file_uploader("Ürün Görselini Yükle (JPG, PNG)", type=["jpg", "jpeg", "png"])
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
@@ -71,40 +77,44 @@ if check_password():
             
         st.markdown("---")
         
-        urun_tanimi = st.text_input("Bu ürün nedir? (İpucu):", placeholder="Örn: Gelin arabası için beyaz vinil çıkartma...")
+        # Dinamik Placeholder
+        ipucu_metni = "Örn: Meymet için dijital dünya temalı grafik logo konsepti..." if is_digital else "Örn: Gelin arabası için beyaz vinil çıkartma..."
+        urun_tanimi = st.text_input("Bu ürün nedir? (İpucu):", placeholder=ipucu_metni)
         
         st.markdown("---")
         
-        dil_secimi = st.radio("Hedef Pazar / Dil Seçimi", ["İngilizce (Etsy, Amazon)", "Türkçe (Trendyol, Shopier)"])
+        dil_secimi = st.radio("🌍 Hedef Pazar / Dil Seçimi", ["İngilizce (Etsy, Amazon)", "Türkçe (Trendyol, Shopier)"])
         dil = "İngilizce" if "İngilizce" in dil_secimi else "Türkçe"
         
         st.markdown("---")
         
-        # BOYUT ALANI
-        st.text_input("Eklenecek boyutu yazıp Ekle'ye basın:", key="yeni_boyut_input")
+        # BOYUT ALANI (Dijital için de oranlar veya format boyutları gerekebilir diye bıraktım)
+        boyut_baslik = "Eklenecek boyutu/oranı yazıp Ekle'ye basın:" if is_digital else "Eklenecek boyutu yazıp Ekle'ye basın:"
+        st.text_input(boyut_baslik, key="yeni_boyut_input")
         c1, c2 = st.columns(2)
         with c1:
-            st.button("➕ Boyut Ekle", on_click=boyut_ekle, use_container_width=True)
+            st.button("➕ Boyut/Oran Ekle", on_click=boyut_ekle, use_container_width=True)
         with c2:
             if len(st.session_state.boyutlar) > 0:
                 st.button("🗑️ Temizle", on_click=boyutlari_temizle, key="temizle_boyut", use_container_width=True)
 
         if st.session_state.boyutlar:
-            st.success("Boyutlar: " + " | ".join(st.session_state.boyutlar))
+            st.success("Boyutlar/Oranlar: " + " | ".join(st.session_state.boyutlar))
             
         st.markdown("---")
         
-        # RENK ALANI
-        st.text_input("Eklenecek rengi yazıp Ekle'ye basın:", key="yeni_renk_input")
+        # RENK/FORMAT ALANI
+        renk_baslik = "Format (örn: PNG, SVG) yazıp Ekle'ye basın:" if is_digital else "Eklenecek rengi yazıp Ekle'ye basın:"
+        st.text_input(renk_baslik, key="yeni_renk_input")
         c3, c4 = st.columns(2)
         with c3:
-            st.button("➕ Renk Ekle", on_click=renk_ekle, use_container_width=True)
+            st.button("➕ Seçenek Ekle", on_click=renk_ekle, use_container_width=True)
         with c4:
             if len(st.session_state.renkler) > 0:
                 st.button("🗑️ Temizle", on_click=renkleri_temizle, key="temizle_renk", use_container_width=True)
 
         if st.session_state.renkler:
-            st.success("Renkler: " + " | ".join(st.session_state.renkler))
+            st.success("Seçenekler: " + " | ".join(st.session_state.renkler))
 
         st.markdown("---")
         
@@ -126,23 +136,35 @@ if check_password():
                     
                     size_hint = ""
                     if len(st.session_state.boyutlar) > 0:
-                        size_hint = f"\nThe available size variants are: {', '.join(st.session_state.boyutlar)}. Include these sizes as a clear list in the description."
+                        size_hint = f"\nThe available size/ratio options are: {', '.join(st.session_state.boyutlar)}. Include these clearly in the description."
 
                     color_hint = ""
                     if len(st.session_state.renkler) > 0:
-                        color_hint = f"\nThe available color options are: {', '.join(st.session_state.renkler)}. Include these color options as a clear list in the description."
+                        color_hint = f"\nThe available color/format options are: {', '.join(st.session_state.renkler)}. Include these clearly in the description."
+
+                    # Ürün tipine göre yapay zeka kişiliğini ve odak noktasını değiştiriyoruz
+                    if is_digital:
+                        base_instruction = """
+                        You are an expert e-commerce SEO specialist focusing on DIGITAL DOWNLOAD products. 
+                        CRITICAL: Emphasize that this is an INSTANT DIGITAL DOWNLOAD. Strictly state that NO physical item will be shipped.
+                        Highlight the high quality of the digital files, ease of printing/using, and perfect suitability for digital projects.
+                        """
+                    else:
+                        base_instruction = """
+                        You are an expert e-commerce SEO specialist and a highly creative copywriter. Analyze the provided image of a handmade/custom-designed physical product.
+                        Highlight the workshop nature, craftsmanship, and physical quality of the item.
+                        """
 
                     prompt = f"""
-                    You are an expert e-commerce SEO specialist and a highly creative copywriter. Analyze the provided image of a handmade/custom-designed product.
+                    {base_instruction}
                     {product_hint}
                     {size_hint}
                     {color_hint}
                     
                     CRITICAL INSTRUCTIONS:
                     1. Output Language: You MUST write the ENTIRE output (Title, Description, Tags) in {target_language}.
-                    2. Creativity & Variety: Do NOT use generic, repetitive boilerplate phrases. Craft a unique, engaging, and heartfelt story for the description. Use diverse vocabulary and vary your sentence structures to ensure the text stands out.
-                    3. Tone: Warm, trustworthy, highlighting the handmade/workshop nature of the item.
-                    4. Strict Format: You MUST use the exact bracketed tags below to separate the sections. Do not add any conversational filler before or after.
+                    2. Creativity & Variety: Do NOT use generic, repetitive boilerplate phrases. Use diverse vocabulary and vary your sentence structures to ensure the text stands out.
+                    3. Strict Format: You MUST use the exact bracketed tags below to separate the sections. Do not add any conversational filler before or after.
 
                     [BASLIK]
                     Write a highly clickable, SEO-optimized e-commerce title here.
