@@ -3,7 +3,7 @@ import google.generativeai as genai
 from PIL import Image
 import re
 
-# Sayfa Ayarları (Madde 8)
+# Sayfa Ayarları
 st.set_page_config(page_title="meymet.com | Görsel Analiziyle Ücretsiz Hızlı SEO Otomasyonu", page_icon="✨", layout="wide")
 
 # --- Hafıza (Session State) ---
@@ -12,7 +12,6 @@ if "boyutlar" not in st.session_state:
 if "renkler" not in st.session_state:
     st.session_state.renkler = []
 
-# Enter'a basınca tetiklenen fonksiyonlar (Madde 1)
 def boyut_ekle():
     val = st.session_state.boyut_input.strip()
     if val and val not in st.session_state.boyutlar:
@@ -25,7 +24,6 @@ def renk_ekle():
         st.session_state.renkler.append(val)
     st.session_state.renk_input = ""
 
-# Metni tag'lere göre ayıran güvenlikli fonksiyon
 def parse_blocks(text):
     blocks = {"BASLIK": "", "ACIKLAMA": "", "ETIKETLER": "", "TR_BASLIK": "", "TR_ACIKLAMA": "", "TR_ETIKETLER": ""}
     pattern = r"\[(BASLIK|ACIKLAMA|ETIKETLER|TR_BASLIK|TR_ACIKLAMA|TR_ETIKETLER)\]"
@@ -54,13 +52,11 @@ def check_password():
     return True
 
 if check_password():
-    # Madde 8: Yeni Başlık
     st.title("meymet.com | Görsel Analiziyle Ücretsiz Hızlı SEO Otomasyonu")
     
     API_KEY = st.secrets["GEMINI_API_KEY"] 
     genai.configure(api_key=API_KEY)
     
-    # Sıcaklık (Yaratıcılık) ayarı yüksek tutuldu
     model = genai.GenerativeModel(
         model_name='gemini-3.5-flash',
         generation_config=genai.GenerationConfig(temperature=0.9)
@@ -68,9 +64,8 @@ if check_password():
 
     sol_sutun, sag_sutun = st.columns([1, 2], gap="large")
 
-    # ================= SOL SÜTUN (AYARLAR) =================
+    # ================= SOL SÜTUN =================
     with sol_sutun:
-        # Madde 7: Seçenekleri yan yana ve daraltılmış bir alana aldık
         r1, r2 = st.columns(2)
         with r1:
             urun_tipi_secimi = st.radio("📦 Ürün Tipi:", ["Fiziksel Ürün", "Dijital İndirme"])
@@ -94,7 +89,6 @@ if check_password():
         
         st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
         
-        # Madde 1 ve 6: Enter ile Ekleme ve Tekli Silme (Boyut)
         col_b_input, col_b_list = st.columns(2)
         with col_b_input:
             boyut_lbl = "Format/Oran (Enter'a bas):" if is_digital else "Ebat/Boyut (Enter'a bas):"
@@ -110,7 +104,6 @@ if check_password():
 
         st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
 
-        # Madde 1 ve 6: Enter ile Ekleme ve Tekli Silme (Renk)
         col_r_input, col_r_list = st.columns(2)
         with col_r_input:
             renk_lbl = "Dosya Türü (Enter'a bas):" if is_digital else "Renk Seçeneği (Enter'a bas):"
@@ -130,7 +123,7 @@ if check_password():
         
         uret_btn = st.button("✨ İçerikleri Üret", type="primary", use_container_width=True)
 
-    # ================= SAĞ SÜTUN (SONUÇLAR) =================
+    # ================= SAĞ SÜTUN =================
     with sag_sutun:
         if uret_btn and uploaded_file is not None:
             with st.spinner("Görsel analiz ediliyor, harika içerikler yazılıyor..."):
@@ -146,14 +139,12 @@ if check_password():
                     else:
                         base_instruction = "You are an expert e-commerce SEO specialist and a creative artisan copywriter analyzing a handmade/custom-designed physical product."
 
-                    # Madde 10: Çeviri emri
                     translation_instruction = ""
                     if is_english:
                         translation_instruction = """
                         5. Translation (CRITICAL): Since the target language is ENGLISH, you MUST ALSO provide the exact TURKISH translation of your generated Title, Description, and Tags. Append them at the very end using these exact tags: [TR_BASLIK], [TR_ACIKLAMA], [TR_ETIKETLER].
                         """
 
-                    # Madde 2, 3, 4 ve Ekstra Önerim(Long-Tail) için devasa prompt revizesi
                     prompt = f"""
                     {base_instruction}
                     {product_hint}
@@ -162,11 +153,10 @@ if check_password():
                     
                     CRITICAL INSTRUCTIONS:
                     1. Output Language: You MUST write the output in {target_language}.
-                    2. Title Rules: Use Title Case (capitalize only the first letter of each word). NEVER use ALL CAPS for entire words (e.g., write 'Wedding Decor', NOT 'WEDDING DECOR').
-                    3. Description Rules (AVOID COOKIE-CUTTER TEMPLATES):
-                       - PARAGRAPH 1 (The Hook): Write a warm, sensory-rich, emotional opening that hooks the reader. Do NOT use generic openings like 'Introducing...' or 'Looking for...'. Tell a miniature story about why this item is special.
+                    2. Description Rules (AVOID COOKIE-CUTTER TEMPLATES):
+                       - PARAGRAPH 1 (The Hook): Write a warm, sensory-rich, emotional opening that hooks the reader. Tell a miniature story about why this item is special.
                        - PARAGRAPH 2 & 3: Detail the features, craftsmanship, or digital quality. Vary your sentence lengths. Be persuasive, natural, and friendly. Never make it sound like a robot wrote it. Include the size/color options naturally or as a clean list.
-                    4. Tag Rules (Long-Tail SEO): Write exactly 13 SEO tags separated by commas. Use multi-word long-tail keywords (e.g., 'custom twitch logo' instead of just 'logo'). EACH TAG MUST BE 20 CHARACTERS OR LESS.
+                    3. Tag Rules (Long-Tail SEO): Write exactly 13 SEO tags separated by commas. Use multi-word long-tail keywords. EACH TAG MUST BE 20 CHARACTERS OR LESS.
                     {translation_instruction}
                     
                     FORMAT STRICTLY AS FOLLOWS (DO NOT add any conversational text outside these tags):
@@ -181,13 +171,14 @@ if check_password():
                     response = model.generate_content([prompt, image])
                     blocks = parse_blocks(response.text)
 
-                    # Madde 2: Python ile Title Case Güvenlik Duvarı
-                    if blocks["BASLIK"].isupper():
+                    # KESİN ÇÖZÜM: Python ile Başlığı Zorla "Title Case" Yapıyoruz. Yapay zekaya bırakmıyoruz.
+                    # .title() komutu her kelimenin SADECE baş harfini büyük yapar, geri kalan tüm harfleri küçük yapar.
+                    if blocks["BASLIK"]:
                         blocks["BASLIK"] = blocks["BASLIK"].title()
-                    if is_english and blocks["TR_BASLIK"].isupper():
+                    
+                    if is_english and blocks["TR_BASLIK"]:
                         blocks["TR_BASLIK"] = blocks["TR_BASLIK"].title()
 
-                    # Madde 6 (Etiket Sınırı Filtresi)
                     def clean_tags(tag_str):
                         return ", ".join([t.strip()[:20] for t in tag_str.split(',') if t.strip()])
                     
@@ -195,17 +186,14 @@ if check_password():
                     if blocks["TR_ETIKETLER"]:
                         blocks["TR_ETIKETLER"] = clean_tags(blocks["TR_ETIKETLER"])
 
-                    # Madde 5: Doğru dilde "Not:" eki
                     if ekstra_not:
                         note_prefix_en = "**Note:** " if is_english else "**Not:** "
                         blocks["ACIKLAMA"] += f"\n\n---\n{note_prefix_en}{ekstra_not}"
                         if is_english and blocks["TR_ACIKLAMA"]:
                             blocks["TR_ACIKLAMA"] += f"\n\n---\n**Not:** {ekstra_not}"
 
-                    # Madde 9: Kullanıcı Uyarı Metni
                     st.info("💡 Yapay zeka aracılığıyla yüklediğiniz görsel analiz edilerek oluşturulan ürün bilgileri otomasyonudur. Lütfen kullanmadan önce okuyarak gerekli revize işlemlerinden sonra içerikleri uygulayınız.")
 
-                    # Madde 10: Sekmeli (Tab) Görüntüleme Sistemi
                     if is_english and blocks["TR_BASLIK"]:
                         tab1, tab2 = st.tabs(["🇬🇧 İngilizce (Orijinal)", "🇹🇷 Türkçe Çevirisi (Kontrol İçin)"])
                         
@@ -224,7 +212,7 @@ if check_password():
                         st.text_area("Etiketler", blocks["ETIKETLER"], label_visibility="collapsed")
 
                 except Exception as e:
-                    st.error(f"Bir hata oluştu veya yapay zeka metni doğru formatta bölmedi. Hata: {e}")
+                    st.error(f"Bir hata oluştu. Hata: {e}")
         
         elif not uploaded_file:
             st.info("👈 Önce sol taraftan ürün görselini yükleyin ve ayarlarınızı yapın.")
