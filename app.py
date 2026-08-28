@@ -145,6 +145,7 @@ if check_password():
                         5. Translation (CRITICAL): Since the target language is ENGLISH, you MUST ALSO provide the exact TURKISH translation of your generated Title, Description, and Tags. Append them at the very end using these exact tags: [TR_BASLIK], [TR_ACIKLAMA], [TR_ETIKETLER].
                         """
 
+                    # YENİ KURAL: "4. NO HALLUCINATIONS" kuralı eklendi.
                     prompt = f"""
                     {base_instruction}
                     {product_hint}
@@ -155,8 +156,9 @@ if check_password():
                     1. Output Language: You MUST write the output in {target_language}.
                     2. Description Rules (AVOID COOKIE-CUTTER TEMPLATES):
                        - PARAGRAPH 1 (The Hook): Write a warm, sensory-rich, emotional opening that hooks the reader. Tell a miniature story about why this item is special.
-                       - PARAGRAPH 2 & 3: Detail the features, craftsmanship, or digital quality. Vary your sentence lengths. Be persuasive, natural, and friendly. Never make it sound like a robot wrote it. Include the size/color options naturally or as a clean list.
+                       - PARAGRAPH 2 & 3: Detail the features, craftsmanship, or digital quality. Vary your sentence lengths. Be persuasive, natural, and friendly. Include the size/color options naturally or as a clean list.
                     3. Tag Rules (Long-Tail SEO): Write exactly 13 SEO tags separated by commas. Use multi-word long-tail keywords. EACH TAG MUST BE 20 CHARACTERS OR LESS.
+                    4. NO HALLUCINATIONS (CRITICAL): DO NOT invent, assume, or add ANY file formats (e.g., SVG, PDF, EPS), colors, or sizes that are not explicitly provided by the user in the lists above. If the user did not specify a format, DO NOT mention one.
                     {translation_instruction}
                     
                     FORMAT STRICTLY AS FOLLOWS (DO NOT add any conversational text outside these tags):
@@ -171,8 +173,6 @@ if check_password():
                     response = model.generate_content([prompt, image])
                     blocks = parse_blocks(response.text)
 
-                    # KESİN ÇÖZÜM: Python ile Başlığı Zorla "Title Case" Yapıyoruz. Yapay zekaya bırakmıyoruz.
-                    # .title() komutu her kelimenin SADECE baş harfini büyük yapar, geri kalan tüm harfleri küçük yapar.
                     if blocks["BASLIK"]:
                         blocks["BASLIK"] = blocks["BASLIK"].title()
                     
