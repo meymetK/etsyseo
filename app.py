@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import re
+import time  # <-- YENİ: Bekleme süresi için zaman kütüphanesi eklendi
 
 # Sayfa Ayarları
 st.set_page_config(page_title="meymet.com | Görsel Analiziyle Ücretsiz Hızlı SEO Otomasyonu", page_icon="✨", layout="wide")
@@ -126,93 +127,111 @@ if check_password():
     # ================= SAĞ SÜTUN =================
     with sag_sutun:
         if uret_btn and uploaded_file is not None:
-            with st.spinner("Görsel analiz ediliyor, harika içerikler yazılıyor..."):
+            
+            # YENİLİK: Otomatik Amortisör Sistemi (Hata Yakalayıcı)
+            max_deneme = 3
+            bekleme_suresi = 20 # 20 saniye bekleme
+            
+            for deneme in range(max_deneme):
                 try:
-                    target_language = "ENGLISH" if is_english else "TURKISH"
-                    product_hint = f"\nThe user describes this product as: '{urun_tanimi}'." if urun_tanimi else ""
-                    
-                    size_hint = f"\nAvailable sizes/ratios: {', '.join(st.session_state.boyutlar)}." if st.session_state.boyutlar else ""
-                    color_hint = f"\nAvailable colors/formats: {', '.join(st.session_state.renkler)}." if st.session_state.renkler else ""
-
-                    if is_digital:
-                        base_instruction = "You are an expert e-commerce SEO specialist focusing on DIGITAL DOWNLOAD products. CRITICAL: Emphasize that this is an INSTANT DIGITAL DOWNLOAD. NO physical item will be shipped."
-                    else:
-                        base_instruction = "You are an expert e-commerce SEO specialist and a creative artisan copywriter analyzing a handmade/custom-designed physical product."
-
-                    translation_instruction = ""
-                    if is_english:
-                        translation_instruction = """
-                        5. Translation (CRITICAL): Since the target language is ENGLISH, you MUST ALSO provide the exact TURKISH translation of your generated Title, Description, and Tags. Append them at the very end using these exact tags: [TR_BASLIK], [TR_ACIKLAMA], [TR_ETIKETLER].
-                        """
-
-                    # YENİ KURAL: "4. NO HALLUCINATIONS" kuralı eklendi.
-                    prompt = f"""
-                    {base_instruction}
-                    {product_hint}
-                    {size_hint}
-                    {color_hint}
-                    
-                    CRITICAL INSTRUCTIONS:
-                    1. Output Language: You MUST write the output in {target_language}.
-                    2. Description Rules (AVOID COOKIE-CUTTER TEMPLATES):
-                       - PARAGRAPH 1 (The Hook): Write a warm, sensory-rich, emotional opening that hooks the reader. Tell a miniature story about why this item is special.
-                       - PARAGRAPH 2 & 3: Detail the features, craftsmanship, or digital quality. Vary your sentence lengths. Be persuasive, natural, and friendly. Include the size/color options naturally or as a clean list.
-                    3. Tag Rules (Long-Tail SEO): Write exactly 13 SEO tags separated by commas. Use multi-word long-tail keywords. EACH TAG MUST BE 20 CHARACTERS OR LESS.
-                    4. NO HALLUCINATIONS (CRITICAL): DO NOT invent, assume, or add ANY file formats (e.g., SVG, PDF, EPS), colors, or sizes that are not explicitly provided by the user in the lists above. If the user did not specify a format, DO NOT mention one.
-                    {translation_instruction}
-                    
-                    FORMAT STRICTLY AS FOLLOWS (DO NOT add any conversational text outside these tags):
-                    [BASLIK]
-                    ...
-                    [ACIKLAMA]
-                    ...
-                    [ETIKETLER]
-                    ...
-                    """
-                    
-                    response = model.generate_content([prompt, image])
-                    blocks = parse_blocks(response.text)
-
-                    if blocks["BASLIK"]:
-                        blocks["BASLIK"] = blocks["BASLIK"].title()
-                    
-                    if is_english and blocks["TR_BASLIK"]:
-                        blocks["TR_BASLIK"] = blocks["TR_BASLIK"].title()
-
-                    def clean_tags(tag_str):
-                        return ", ".join([t.strip()[:20] for t in tag_str.split(',') if t.strip()])
-                    
-                    blocks["ETIKETLER"] = clean_tags(blocks["ETIKETLER"])
-                    if blocks["TR_ETIKETLER"]:
-                        blocks["TR_ETIKETLER"] = clean_tags(blocks["TR_ETIKETLER"])
-
-                    if ekstra_not:
-                        note_prefix_en = "**Note:** " if is_english else "**Not:** "
-                        blocks["ACIKLAMA"] += f"\n\n---\n{note_prefix_en}{ekstra_not}"
-                        if is_english and blocks["TR_ACIKLAMA"]:
-                            blocks["TR_ACIKLAMA"] += f"\n\n---\n**Not:** {ekstra_not}"
-
-                    st.info("💡 Yapay zeka aracılığıyla yüklediğiniz görsel analiz edilerek oluşturulan ürün bilgileri otomasyonudur. Lütfen kullanmadan önce okuyarak gerekli revize işlemlerinden sonra içerikleri uygulayınız.")
-
-                    if is_english and blocks["TR_BASLIK"]:
-                        tab1, tab2 = st.tabs(["🇬🇧 İngilizce (Orijinal)", "🇹🇷 Türkçe Çevirisi (Kontrol İçin)"])
+                    with st.spinner("Görsel analiz ediliyor, harika içerikler yazılıyor..."):
+                        target_language = "ENGLISH" if is_english else "TURKISH"
+                        product_hint = f"\nThe user describes this product as: '{urun_tanimi}'." if urun_tanimi else ""
                         
-                        with tab1:
+                        size_hint = f"\nAvailable sizes/ratios: {', '.join(st.session_state.boyutlar)}." if st.session_state.boyutlar else ""
+                        color_hint = f"\nAvailable colors/formats: {', '.join(st.session_state.renkler)}." if st.session_state.renkler else ""
+
+                        if is_digital:
+                            base_instruction = "You are an expert e-commerce SEO specialist focusing on DIGITAL DOWNLOAD products. CRITICAL: Emphasize that this is an INSTANT DIGITAL DOWNLOAD. NO physical item will be shipped."
+                        else:
+                            base_instruction = "You are an expert e-commerce SEO specialist and a creative artisan copywriter analyzing a handmade/custom-designed physical product."
+
+                        translation_instruction = ""
+                        if is_english:
+                            translation_instruction = """
+                            5. Translation (CRITICAL): Since the target language is ENGLISH, you MUST ALSO provide the exact TURKISH translation of your generated Title, Description, and Tags. Append them at the very end using these exact tags: [TR_BASLIK], [TR_ACIKLAMA], [TR_ETIKETLER].
+                            """
+
+                        prompt = f"""
+                        {base_instruction}
+                        {product_hint}
+                        {size_hint}
+                        {color_hint}
+                        
+                        CRITICAL INSTRUCTIONS:
+                        1. Output Language: You MUST write the output in {target_language}.
+                        2. Description Rules (AVOID COOKIE-CUTTER TEMPLATES):
+                           - PARAGRAPH 1 (The Hook): Write a warm, sensory-rich, emotional opening that hooks the reader. Tell a miniature story about why this item is special.
+                           - PARAGRAPH 2 & 3: Detail the features, craftsmanship, or digital quality. Vary your sentence lengths. Be persuasive, natural, and friendly. Include the size/color options naturally or as a clean list.
+                        3. Tag Rules (Long-Tail SEO): Write exactly 13 SEO tags separated by commas. Use multi-word long-tail keywords. EACH TAG MUST BE 20 CHARACTERS OR LESS.
+                        4. NO HALLUCINATIONS (CRITICAL): DO NOT invent, assume, or add ANY file formats (e.g., SVG, PDF, EPS), colors, or sizes that are not explicitly provided by the user in the lists above. If the user did not specify a format, DO NOT mention one.
+                        {translation_instruction}
+                        
+                        FORMAT STRICTLY AS FOLLOWS (DO NOT add any conversational text outside these tags):
+                        [BASLIK]
+                        ...
+                        [ACIKLAMA]
+                        ...
+                        [ETIKETLER]
+                        ...
+                        """
+                        
+                        # API'ye İstek Atılan Kısım
+                        response = model.generate_content([prompt, image])
+                        blocks = parse_blocks(response.text)
+
+                        if blocks["BASLIK"]:
+                            blocks["BASLIK"] = blocks["BASLIK"].title()
+                        
+                        if is_english and blocks["TR_BASLIK"]:
+                            blocks["TR_BASLIK"] = blocks["TR_BASLIK"].title()
+
+                        def clean_tags(tag_str):
+                            return ", ".join([t.strip()[:20] for t in tag_str.split(',') if t.strip()])
+                        
+                        blocks["ETIKETLER"] = clean_tags(blocks["ETIKETLER"])
+                        if blocks["TR_ETIKETLER"]:
+                            blocks["TR_ETIKETLER"] = clean_tags(blocks["TR_ETIKETLER"])
+
+                        if ekstra_not:
+                            note_prefix_en = "**Note:** " if is_english else "**Not:** "
+                            blocks["ACIKLAMA"] += f"\n\n---\n{note_prefix_en}{ekstra_not}"
+                            if is_english and blocks["TR_ACIKLAMA"]:
+                                blocks["TR_ACIKLAMA"] += f"\n\n---\n**Not:** {ekstra_not}"
+
+                        st.info("💡 Yapay zeka aracılığıyla yüklediğiniz görsel analiz edilerek oluşturulan ürün bilgileri otomasyonudur. Lütfen kullanmadan önce okuyarak gerekli revize işlemlerinden sonra içerikleri uygulayınız.")
+
+                        if is_english and blocks["TR_BASLIK"]:
+                            tab1, tab2 = st.tabs(["🇬🇧 İngilizce (Orijinal)", "🇹🇷 Türkçe Çevirisi (Kontrol İçin)"])
+                            
+                            with tab1:
+                                st.text_area("Başlık", blocks["BASLIK"], label_visibility="collapsed")
+                                st.text_area("Açıklama", blocks["ACIKLAMA"], height=250, label_visibility="collapsed")
+                                st.text_area("Etiketler", blocks["ETIKETLER"], label_visibility="collapsed")
+                                
+                            with tab2:
+                                st.text_area("TR Başlık", blocks["TR_BASLIK"], label_visibility="collapsed")
+                                st.text_area("TR Açıklama", blocks["TR_ACIKLAMA"], height=250, label_visibility="collapsed")
+                                st.text_area("TR Etiketler", blocks["TR_ETIKETLER"], label_visibility="collapsed")
+                        else:
                             st.text_area("Başlık", blocks["BASLIK"], label_visibility="collapsed")
                             st.text_area("Açıklama", blocks["ACIKLAMA"], height=250, label_visibility="collapsed")
                             st.text_area("Etiketler", blocks["ETIKETLER"], label_visibility="collapsed")
-                            
-                        with tab2:
-                            st.text_area("TR Başlık", blocks["TR_BASLIK"], label_visibility="collapsed")
-                            st.text_area("TR Açıklama", blocks["TR_ACIKLAMA"], height=250, label_visibility="collapsed")
-                            st.text_area("TR Etiketler", blocks["TR_ETIKETLER"], label_visibility="collapsed")
-                    else:
-                        st.text_area("Başlık", blocks["BASLIK"], label_visibility="collapsed")
-                        st.text_area("Açıklama", blocks["ACIKLAMA"], height=250, label_visibility="collapsed")
-                        st.text_area("Etiketler", blocks["ETIKETLER"], label_visibility="collapsed")
-
+                        
+                        # Başarılı olursa döngüden çık
+                        break 
+                        
                 except Exception as e:
-                    st.error(f"Bir hata oluştu. Hata: {e}")
+                    hata_mesaji = str(e)
+                    # Hata 429 (Çok Hızlı İstek) ise ve deneme hakkımız bitmediyse:
+                    if "429" in hata_mesaji and deneme < max_deneme - 1:
+                        st.warning(f"⏳ Hız sınırına takıldık. Google ceza kesti. Sistem otomatik olarak {bekleme_suresi} saniye bekleyip tekrar deneyecek... (Deneme {deneme+1}/{max_deneme})")
+                        time.sleep(bekleme_suresi)
+                        st.rerun() # Sayfayı yenileyip tekrar tetikle
+                    else:
+                        # Eğer hata 429 değilse veya 3 kere denedik hala çözülmediyse kırmızı hata ver
+                        st.error(f"Bir hata oluştu. Hata detayları: {hata_mesaji}")
+                        break
         
         elif not uploaded_file:
             st.info("👈 Önce sol taraftan ürün görselini yükleyin ve ayarlarınızı yapın.")
