@@ -41,7 +41,7 @@ API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=API_KEY)
 
 model = genai.GenerativeModel(
-    model_name='gemini-2.5-flash',
+    model_name='gemini-3.5-flash',
     generation_config=genai.GenerationConfig(temperature=0.9)
 )
 
@@ -62,12 +62,10 @@ with sol_sutun:
     i1, i2 = st.columns([1, 2])
     with i1:
         uploaded_file = st.file_uploader("Görsel Yükle", type=["jpg", "jpeg", "png"])
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    preview = image.copy()
-    preview.thumbnail((120, 120))
-    st.image(preview)   # önizleme küçültülmüş kopyada
-    # 'image' orijinal boyutunda kalır, Gemini'ye tam kalitede gider
+        if uploaded_file is not None:
+            image = Image.open(uploaded_file)
+            image.thumbnail((120, 120))
+            st.image(image)
     with i2:
         ipucu = "Örn: Dünya temalı logo..." if is_digital else "Örn: Beyaz vinil çıkartma..."
         urun_tanimi = st.text_area("Bu ürün nedir? (İpucu):", placeholder=ipucu, height=100)
