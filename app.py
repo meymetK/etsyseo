@@ -17,14 +17,16 @@ st.set_page_config(page_title="meymet.com | Görsel Analiziyle Ücretsiz Hızlı
 # İlk model 429 (kota) veya 404 (model kaldırıldı) hatası verirse,
 # otomatik olarak bir sonrakine geçilir.
 # =========================================================
-# NOT: 3.5-flash listede önce geliyor çünkü test sürecinde güvenilir şekilde
-# çalıştığı görüldü. 3.6-flash bazı isteklerde "düşünme" (thinking) bütçesini
-# tüketip hiç cevap üretmeden bitirebiliyor (bilinen bir Gemini 3.x davranışı) —
-# bu yüzden onu ikinci sıraya aldık, boş cevap gelirse otomatik atlanacak.
+# NOT: "latest" alias'ları Google tarafından otomatik güncel tutulan model adlarıdır
+# (ör. gemini-flash-latest her zaman o anki en güncel/stabil flash modeline işaret eder).
+# Bu sayede Google model adlarını değiştirdikçe/eskittikçe kodu tekrar tekrar
+# güncellemek zorunda kalmayız. Onu birincil seçenek yapıp, olası "latest" alias
+# sorunlarına karşı belirli sürüm adlarını da yedek olarak bırakıyoruz.
+# gemini-2.0-flash listede YOK çünkü Google tarafından resmen kapatıldı (shut down).
 MODEL_FALLBACK_LIST = [
+    "gemini-flash-latest",
     "gemini-3.5-flash",
     "gemini-3.6-flash",
-    "gemini-2.0-flash",
 ]
 
 # =========================================================
@@ -133,8 +135,9 @@ def _build_generation_config():
 def generate_with_fallback(prompt_parts):
     """Modeller arasında sırayla dener. Kota/kaldırılma hatasında VEYA
     modelin (thinking bütçesi yüzünden) BOŞ cevap döndürmesi durumunda
-    otomatik olarak bir sonraki modele geçer."""
-    last_error = None
+    otomatik olarak bir sonraki modele geçer. Her modelde ne olduğunu
+    ayrı ayrı kaydeder ki hepsi başarısız olursa net bir hata görülsün."""
+    attempt_log = []
     for model_name in MODEL_FALLBACK_LIST:
         try:
             model = genai.GenerativeModel(
@@ -144,15 +147,13 @@ def generate_with_fallback(prompt_parts):
             response = model.generate_content(prompt_parts)
             text = (getattr(response, "text", None) or "").strip()
             if not text:
-                last_error = RuntimeError(
-                    f"'{model_name}' boş cevap döndürdü (muhtemelen thinking bütçesi tükendi)."
-                )
+                attempt_log.append(f"{model_name}: boş cevap döndü (muhtemelen thinking bütçesi tükendi)")
                 continue  # sıradaki modele geç
             return response, model_name
         except Exception as e:
-            last_error = e
+            attempt_log.append(f"{model_name}: {e}")
             continue  # her türlü hatada sıradaki modele geç, en sona kadar dene
-    raise last_error
+    raise RuntimeError("Tüm modeller denendi, hiçbiri sonuç vermedi:\n" + "\n".join(attempt_log))
 
 # =========================================================
 # ÜST BAŞLIK + TARİH/SAAT + GÜNLÜK SAYAÇ
