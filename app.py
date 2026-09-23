@@ -64,8 +64,10 @@ with sol_sutun:
         uploaded_file = st.file_uploader("Görsel Yükle", type=["jpg", "jpeg", "png"])
         if uploaded_file is not None:
             image = Image.open(uploaded_file)
-            image.thumbnail((120, 120))
-            st.image(image)
+            preview = image.copy()
+            preview.thumbnail((120, 120))
+            st.image(preview)   
+    
     with i2:
         ipucu = "Örn: Dünya temalı logo..." if is_digital else "Örn: Beyaz vinil çıkartma..."
         urun_tanimi = st.text_area("Bu ürün nedir? (İpucu):", placeholder=ipucu, height=100)
