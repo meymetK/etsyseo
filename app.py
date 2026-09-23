@@ -17,9 +17,13 @@ st.set_page_config(page_title="meymet.com | Görsel Analiziyle Ücretsiz Hızlı
 # İlk model 429 (kota) veya 404 (model kaldırıldı) hatası verirse,
 # otomatik olarak bir sonrakine geçilir.
 # =========================================================
+# NOT: 3.5-flash listede önce geliyor çünkü test sürecinde güvenilir şekilde
+# çalıştığı görüldü. 3.6-flash bazı isteklerde "düşünme" (thinking) bütçesini
+# tüketip hiç cevap üretmeden bitirebiliyor (bilinen bir Gemini 3.x davranışı) —
+# bu yüzden onu ikinci sıraya aldık, boş cevap gelirse otomatik atlanacak.
 MODEL_FALLBACK_LIST = [
-    "gemini-3.6-flash",
     "gemini-3.5-flash",
+    "gemini-3.6-flash",
     "gemini-2.0-flash",
 ]
 
@@ -100,24 +104,54 @@ def trim_title(title, max_len=76):
         cut = cut.rsplit(" ", 1)[0]
     return cut.strip(" ,.-")
 
+def _build_generation_config():
+    """Yüklü SDK sürümüne göre en uygun ayarı dener; desteklenmeyen parametrede
+    bir alt seçeneğe sessizce düşer (versiyon farklarına karşı güvenli)."""
+    attempts = []
+
+    # 1) Thinking'i kısıp bol token payı ver (destekleniyorsa en ideali)
+    try:
+        attempts.append(genai.GenerationConfig(
+            temperature=0.7,
+            max_output_tokens=8192,
+            thinking_config=genai.types.ThinkingConfig(thinking_budget=0),
+        ))
+    except Exception:
+        pass
+
+    # 2) Sadece bol token payı
+    try:
+        attempts.append(genai.GenerationConfig(temperature=0.7, max_output_tokens=8192))
+    except Exception:
+        pass
+
+    # 3) En sade hali (her SDK sürümünde çalışır)
+    attempts.append(genai.GenerationConfig(temperature=0.7))
+
+    return attempts[0]
+
 def generate_with_fallback(prompt_parts):
-    """Modeller arasında sırayla dener; kota/kaldırılma hatasında bir sonrakine geçer."""
+    """Modeller arasında sırayla dener. Kota/kaldırılma hatasında VEYA
+    modelin (thinking bütçesi yüzünden) BOŞ cevap döndürmesi durumunda
+    otomatik olarak bir sonraki modele geçer."""
     last_error = None
     for model_name in MODEL_FALLBACK_LIST:
         try:
             model = genai.GenerativeModel(
                 model_name=model_name,
-                generation_config=genai.GenerationConfig(temperature=0.7),
+                generation_config=_build_generation_config(),
             )
             response = model.generate_content(prompt_parts)
+            text = (getattr(response, "text", None) or "").strip()
+            if not text:
+                last_error = RuntimeError(
+                    f"'{model_name}' boş cevap döndürdü (muhtemelen thinking bütçesi tükendi)."
+                )
+                continue  # sıradaki modele geç
             return response, model_name
         except Exception as e:
-            err_str = str(e)
             last_error = e
-            if "429" in err_str or "404" in err_str or "quota" in err_str.lower() or "not found" in err_str.lower():
-                continue  # sıradaki modele geç
-            else:
-                raise
+            continue  # her türlü hatada sıradaki modele geç, en sona kadar dene
     raise last_error
 
 # =========================================================
