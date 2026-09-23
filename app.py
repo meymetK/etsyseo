@@ -35,23 +35,6 @@ def parse_blocks(text):
         blocks[tag_name] = text[start_pos:end_pos].strip()
     return blocks
 
-# --- Şifre Ekranı ---
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-    if not st.session_state["password_correct"]:
-        st.title("🔒 Giriş Yapın")
-        pwd = st.text_input("Şifreniz:", type="password")
-        if st.button("Giriş"):
-            if pwd == st.secrets.get("APP_PASSWORD", "123456"): 
-                st.session_state["password_correct"] = True
-                st.rerun()
-            else:
-                st.error("Yanlış şifre, tekrar dene!")
-        return False
-    return True
-
-if check_password():
     st.title("meymet.com | Görsel Analiziyle Ücretsiz Hızlı SEO Otomasyonu")
     
     API_KEY = st.secrets["GEMINI_API_KEY"] 
