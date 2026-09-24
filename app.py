@@ -4,6 +4,7 @@ from PIL import Image
 import re
 import json
 import os
+import time
 from datetime import date, datetime
 
 # =========================================================
@@ -54,6 +55,7 @@ MODEL_FALLBACK_LIST = [
     "gemini-3.6-flash",
     "gemini-flash-latest",
     "gemini-3.5-flash",
+    "gemini-3.8-flash",
 ]
 
 def _dead_models_today():
@@ -189,33 +191,50 @@ def _build_generation_config():
 
     return attempts[0]
 
+def _extract_retry_seconds(err_str, default=10, cap=60):
+    m = re.search(r"retry in ([\d.]+)s", err_str) or re.search(r"seconds:\s*(\d+)", err_str)
+    if m:
+        try:
+            return min(float(m.group(1)) + 1, cap)
+        except ValueError:
+            pass
+    return default
+
 def generate_with_fallback(prompt_parts):
-    """Modeller arasında sırayla dener. Kota/kaldırılma hatasında VEYA
-    modelin (thinking bütçesi yüzünden) BOŞ cevap döndürmesi durumunda
-    otomatik olarak bir sonraki modele geçer. Bugün zaten başarısız olmuş
-    bir model varsa, kota boşa harcanmasın diye o model bu gün için atlanır
-    (tüm modeller ölü işaretliyse, belki geçicidir diye yine de hepsi denenir)."""
+    """Modeller arasında sırayla dener.
+    - Günlük kota bittiyse (PerDay) -> model bugün için 'ölü' işaretlenir, atlanır.
+    - Dakikalık hız limitine takıldıysa (PerMinute) -> kısa süre beklenip AYNI model
+      bir kez daha denenir, bütün gün için ölü işaretlenmez (bu geçiciydi).
+    - Boş cevap gelirse -> bugün için ölü işaretlenir, sıradaki modele geçilir."""
     attempt_log = []
     dead = _dead_models_today()
     models_to_try = [m for m in MODEL_FALLBACK_LIST if m not in dead] or MODEL_FALLBACK_LIST
 
     for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                generation_config=_build_generation_config(),
-            )
-            response = model.generate_content(prompt_parts)
-            text = (getattr(response, "text", None) or "").strip()
-            if not text:
-                attempt_log.append(f"{model_name}: boş cevap döndü (muhtemelen thinking bütçesi tükendi)")
-                _mark_model_dead(model_name)
-                continue  # sıradaki modele geç
-            return response, model_name
-        except Exception as e:
-            attempt_log.append(f"{model_name}: {e}")
-            _mark_model_dead(model_name)
-            continue  # her türlü hatada sıradaki modele geç, en sona kadar dene
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            generation_config=_build_generation_config(),
+        )
+        for attempt in (1, 2):  # dakikalık limite takılırsa 1 kez daha dene
+            try:
+                response = model.generate_content(prompt_parts)
+                text = (getattr(response, "text", None) or "").strip()
+                if not text:
+                    attempt_log.append(f"{model_name}: boş cevap döndü (muhtemelen thinking bütçesi tükendi)")
+                    _mark_model_dead(model_name)
+                    break  # sıradaki modele geç
+                return response, model_name
+            except Exception as e:
+                err_str = str(e)
+                is_per_minute = "PerMinute" in err_str or "RequestsPerMinute" in err_str
+                if is_per_minute and attempt == 1:
+                    wait = _extract_retry_seconds(err_str)
+                    time.sleep(wait)
+                    continue  # aynı modeli bir kez daha dene
+                attempt_log.append(f"{model_name}: {e}")
+                if not is_per_minute:
+                    _mark_model_dead(model_name)  # günlük kota / kalıcı hata -> bugün atla
+                break  # sıradaki modele geç
     raise RuntimeError("Tüm modeller denendi, hiçbiri sonuç vermedi:\n" + "\n".join(attempt_log))
 
 # =========================================================
