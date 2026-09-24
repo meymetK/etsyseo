@@ -24,9 +24,7 @@ st.set_page_config(page_title="meymet.com | Görsel Analiziyle Ücretsiz Hızlı
 # sorunlarına karşı belirli sürüm adlarını da yedek olarak bırakıyoruz.
 # gemini-2.0-flash listede YOK çünkü Google tarafından resmen kapatıldı (shut down).
 MODEL_FALLBACK_LIST = [
-    "gemini-flash-latest",
-    "gemini-3.5-flash",
-    "gemini-3.6-flash",
+    "gemini-2.5-flash",
 ]
 
 # =========================================================
