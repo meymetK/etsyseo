@@ -12,6 +12,34 @@ from datetime import date, datetime
 st.set_page_config(page_title="meymet.com | Görsel Analiziyle Ücretsiz Hızlı SEO Otomasyonu", page_icon="✨", layout="wide")
 
 # =========================================================
+# ŞİFRE KORUMASI
+# Şifre .streamlit/secrets.toml içinde APP_PASSWORD olarak tutulur,
+# kodun içine yazılmaz (böylece kodu paylaşsan bile şifre görünmez).
+# =========================================================
+def check_password():
+    def password_entered():
+        correct = st.secrets.get("APP_PASSWORD", "")
+        if st.session_state.get("password_input", "") == correct and correct != "":
+            st.session_state["password_ok"] = True
+            st.session_state["password_input"] = ""
+        else:
+            st.session_state["password_ok"] = False
+
+    if st.session_state.get("password_ok", False):
+        return True
+
+    st.markdown("### 🔒 Bu araç şifre korumalı")
+    st.text_input("Şifre:", type="password", key="password_input", on_change=password_entered)
+
+    if "password_ok" in st.session_state and st.session_state["password_ok"] is False:
+        st.error("Şifre yanlış, tekrar dene.")
+
+    return False
+
+if not check_password():
+    st.stop()
+
+# =========================================================
 # MODEL FALLBACK LİSTESİ
 # Google modelleri sık değiştiriyor / kotaları farklı.
 # İlk model 429 (kota) veya 404 (model kaldırıldı) hatası verirse,
@@ -19,18 +47,49 @@ st.set_page_config(page_title="meymet.com | Görsel Analiziyle Ücretsiz Hızlı
 # =========================================================
 # NOT: "latest" alias'ları Google tarafından otomatik güncel tutulan model adlarıdır
 # (ör. gemini-flash-latest her zaman o anki en güncel/stabil flash modeline işaret eder).
-# Bu sayede Google model adlarını değiştirdikçe/eskittikçe kodu tekrar tekrar
-# güncellemek zorunda kalmayız. Onu birincil seçenek yapıp, olası "latest" alias
-# sorunlarına karşı belirli sürüm adlarını da yedek olarak bırakıyoruz.
+# 3.6-flash listede ÖNDE çünkü şu an için güvenilir şekilde çalıştığı gözlendi;
+# diğerleri yedek. Sıra zamanla değişebilir, gözlemledikçe güncelleriz.
 # gemini-2.0-flash listede YOK çünkü Google tarafından resmen kapatıldı (shut down).
 MODEL_FALLBACK_LIST = [
-    "gemini-2.5-flash",
+    "gemini-3.6-flash",
+    "gemini-flash-latest",
+    "gemini-3.5-flash",
 ]
+
+def _dead_models_today():
+    """Bugün zaten başarısız olmuş modelleri hatırlar, boşuna kota harcanmasın diye
+    aynı gün tekrar denenmez. Dosyaya yazılır ki sayfa yenilense/yeni sekme açılsa
+    bile hatırlansın; gün değişince otomatik sıfırlanır."""
+    today_key = date.today().isoformat()
+    data = _load_dead_models_data()
+    return set(data.get(today_key, []))
+
+def _mark_model_dead(model_name):
+    today_key = date.today().isoformat()
+    data = _load_dead_models_data()
+    current = set(data.get(today_key, []))
+    current.add(model_name)
+    data[today_key] = list(current)
+    if len(data) > 7:
+        for k in sorted(data.keys())[:-7]:
+            data.pop(k, None)
+    with open(DEAD_MODELS_FILE, "w") as f:
+        json.dump(data, f)
+
+def _load_dead_models_data():
+    if os.path.exists(DEAD_MODELS_FILE):
+        try:
+            with open(DEAD_MODELS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
 
 # =========================================================
 # GÜNLÜK KULLANIM SAYACI (basit dosya tabanlı)
 # =========================================================
 COUNTER_FILE = "usage_counter.json"
+DEAD_MODELS_FILE = "dead_models_today.json"
 
 def _load_counter_data():
     if os.path.exists(COUNTER_FILE):
@@ -133,10 +192,14 @@ def _build_generation_config():
 def generate_with_fallback(prompt_parts):
     """Modeller arasında sırayla dener. Kota/kaldırılma hatasında VEYA
     modelin (thinking bütçesi yüzünden) BOŞ cevap döndürmesi durumunda
-    otomatik olarak bir sonraki modele geçer. Her modelde ne olduğunu
-    ayrı ayrı kaydeder ki hepsi başarısız olursa net bir hata görülsün."""
+    otomatik olarak bir sonraki modele geçer. Bugün zaten başarısız olmuş
+    bir model varsa, kota boşa harcanmasın diye o model bu gün için atlanır
+    (tüm modeller ölü işaretliyse, belki geçicidir diye yine de hepsi denenir)."""
     attempt_log = []
-    for model_name in MODEL_FALLBACK_LIST:
+    dead = _dead_models_today()
+    models_to_try = [m for m in MODEL_FALLBACK_LIST if m not in dead] or MODEL_FALLBACK_LIST
+
+    for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(
                 model_name=model_name,
@@ -146,10 +209,12 @@ def generate_with_fallback(prompt_parts):
             text = (getattr(response, "text", None) or "").strip()
             if not text:
                 attempt_log.append(f"{model_name}: boş cevap döndü (muhtemelen thinking bütçesi tükendi)")
+                _mark_model_dead(model_name)
                 continue  # sıradaki modele geç
             return response, model_name
         except Exception as e:
             attempt_log.append(f"{model_name}: {e}")
+            _mark_model_dead(model_name)
             continue  # her türlü hatada sıradaki modele geç, en sona kadar dene
     raise RuntimeError("Tüm modeller denendi, hiçbiri sonuç vermedi:\n" + "\n".join(attempt_log))
 
@@ -328,6 +393,9 @@ with sag_sutun:
 
                 st.info("💡 Yapay zeka aracılığıyla yüklediğiniz görsel analiz edilerek oluşturulan ürün bilgileri otomasyonudur. Lütfen kullanmadan önce okuyarak gerekli revize işlemlerinden sonra içerikleri uygulayınız.")
                 st.caption(f"🔧 Kullanılan model: `{used_model}`  •  Bugünkü toplam kullanım: {yeni_sayac}  •  Başlık uzunluğu: {len(blocks['BASLIK'])}/76")
+                bugun_olu = _dead_models_today()
+                if bugun_olu:
+                    st.caption(f"⚠️ Bugün kotası/erişimi tükenmiş modeller (atlanıyor): {', '.join(sorted(bugun_olu))}")
 
                 if is_english and blocks["TR_BASLIK"]:
                     tab1, tab2 = st.tabs(["🇬🇧 İngilizce (Orijinal)", "🇹🇷 Türkçe Çevirisi (Kontrol İçin)"])
