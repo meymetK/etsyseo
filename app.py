@@ -4,7 +4,6 @@ from PIL import Image
 import re
 import json
 import os
-import time
 from datetime import date, datetime
 
 # =========================================================
@@ -41,57 +40,16 @@ if not check_password():
     st.stop()
 
 # =========================================================
-# MODEL FALLBACK LİSTESİ
-# Google modelleri sık değiştiriyor / kotaları farklı.
-# İlk model 429 (kota) veya 404 (model kaldırıldı) hatası verirse,
-# otomatik olarak bir sonrakine geçilir.
+# MODEL
+# Tek, sabit bir model kullanılıyor — birden fazla modeli sırayla deneyen
+# fallback mekanizması kaldırıldı, çünkü her tıklamada 3-4 ayrı isteğe mal
+# olup kotayı gereksiz yere çok daha hızlı tüketiyordu.
+# Google bu modeli kaldırır/değiştirirse, tek yapman gereken bu satırı
+# güncellemek (hata mesajı zaten hangi modele geçmen gerektiğini söylüyor).
 # =========================================================
-# NOT: "latest" alias'ları Google tarafından otomatik güncel tutulan model adlarıdır
-# (ör. gemini-flash-latest her zaman o anki en güncel/stabil flash modeline işaret eder).
-# 3.6-flash listede ÖNDE çünkü şu an için güvenilir şekilde çalıştığı gözlendi;
-# diğerleri yedek. Sıra zamanla değişebilir, gözlemledikçe güncelleriz.
-# gemini-2.0-flash listede YOK çünkü Google tarafından resmen kapatıldı (shut down).
-MODEL_FALLBACK_LIST = [
-    "gemini-3.6-flash",
-    "gemini-flash-latest",
-    "gemini-3.5-flash",
-    "gemini-3.8-flash",
-]
+MODEL_NAME = "gemini-3.6-flash"
 
-def _dead_models_today():
-    """Bugün zaten başarısız olmuş modelleri hatırlar, boşuna kota harcanmasın diye
-    aynı gün tekrar denenmez. Dosyaya yazılır ki sayfa yenilense/yeni sekme açılsa
-    bile hatırlansın; gün değişince otomatik sıfırlanır."""
-    today_key = date.today().isoformat()
-    data = _load_dead_models_data()
-    return set(data.get(today_key, []))
-
-def _mark_model_dead(model_name):
-    today_key = date.today().isoformat()
-    data = _load_dead_models_data()
-    current = set(data.get(today_key, []))
-    current.add(model_name)
-    data[today_key] = list(current)
-    if len(data) > 7:
-        for k in sorted(data.keys())[:-7]:
-            data.pop(k, None)
-    with open(DEAD_MODELS_FILE, "w") as f:
-        json.dump(data, f)
-
-def _load_dead_models_data():
-    if os.path.exists(DEAD_MODELS_FILE):
-        try:
-            with open(DEAD_MODELS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-# =========================================================
-# GÜNLÜK KULLANIM SAYACI (basit dosya tabanlı)
-# =========================================================
 COUNTER_FILE = "usage_counter.json"
-DEAD_MODELS_FILE = "dead_models_today.json"
 
 def _load_counter_data():
     if os.path.exists(COUNTER_FILE):
@@ -191,51 +149,51 @@ def _build_generation_config():
 
     return attempts[0]
 
-def _extract_retry_seconds(err_str, default=10, cap=60):
-    m = re.search(r"retry in ([\d.]+)s", err_str) or re.search(r"seconds:\s*(\d+)", err_str)
-    if m:
-        try:
-            return min(float(m.group(1)) + 1, cap)
-        except ValueError:
-            pass
-    return default
+def _classify_error(err_str):
+    if "PerDay" in err_str:
+        return "day"
+    if "PerMinute" in err_str or "RequestsPerMinute" in err_str:
+        return "minute"
+    if "429" in err_str:
+        return "other_429"
+    if "404" in err_str or "not found" in err_str.lower() or "no longer available" in err_str.lower():
+        return "not_found"
+    return "other"
 
-def generate_with_fallback(prompt_parts):
-    """Modeller arasında sırayla dener.
-    - Günlük kota bittiyse (PerDay) -> model bugün için 'ölü' işaretlenir, atlanır.
-    - Dakikalık hız limitine takıldıysa (PerMinute) -> kısa süre beklenip AYNI model
-      bir kez daha denenir, bütün gün için ölü işaretlenmez (bu geçiciydi).
-    - Boş cevap gelirse -> bugün için ölü işaretlenir, sıradaki modele geçilir."""
-    attempt_log = []
-    dead = _dead_models_today()
-    models_to_try = [m for m in MODEL_FALLBACK_LIST if m not in dead] or MODEL_FALLBACK_LIST
+def generate_once(prompt_parts):
+    """Tek, sabit modelle bir kez dener. Başarısız olursa ham Google JSON'ı yerine
+    tek satırlık anlaşılır bir Türkçe özet fırlatır (teknik detay altta kalır)."""
+    model = genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        generation_config=_build_generation_config(),
+    )
+    try:
+        response = model.generate_content(prompt_parts)
+    except Exception as e:
+        err_str = str(e)
+        kind = _classify_error(err_str)
+        if kind == "day":
+            friendly = ("Bugünkü ücretsiz kullanım hakkın bu model için bitti. "
+                        "Google'ın günlük sayacı Pasifik saatine göre sıfırlanıyor "
+                        "(İstanbul saatiyle yaklaşık 10:00-11:00 civarı). O saatten sonra tekrar dene, "
+                        "ya da ücretli katmana geçerek bu sınırı kaldır.")
+        elif kind == "minute":
+            friendly = ("Kısa aralıklarla arka arkaya denendiği için dakikalık hız sınırına takıldın. "
+                        "Yaklaşık 1 dakika bekleyip tek seferlik tekrar dene.")
+        elif kind == "not_found":
+            friendly = (f"'{MODEL_NAME}' modeli Google tarafından kaldırılmış/değiştirilmiş görünüyor. "
+                        "Kodun başındaki MODEL_NAME satırını güncellemek gerekiyor.")
+        else:
+            friendly = "Bir hata oluştu."
+        raise RuntimeError(friendly + f"\n\nTeknik detay: {err_str}")
 
-    for model_name in models_to_try:
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            generation_config=_build_generation_config(),
+    text = (getattr(response, "text", None) or "").strip()
+    if not text:
+        raise RuntimeError(
+            "Model boş cevap döndürdü (muhtemelen 'thinking' bütçesi tükendi). "
+            "Birkaç saniye bekleyip tekrar dene."
         )
-        for attempt in (1, 2):  # dakikalık limite takılırsa 1 kez daha dene
-            try:
-                response = model.generate_content(prompt_parts)
-                text = (getattr(response, "text", None) or "").strip()
-                if not text:
-                    attempt_log.append(f"{model_name}: boş cevap döndü (muhtemelen thinking bütçesi tükendi)")
-                    _mark_model_dead(model_name)
-                    break  # sıradaki modele geç
-                return response, model_name
-            except Exception as e:
-                err_str = str(e)
-                is_per_minute = "PerMinute" in err_str or "RequestsPerMinute" in err_str
-                if is_per_minute and attempt == 1:
-                    wait = _extract_retry_seconds(err_str)
-                    time.sleep(wait)
-                    continue  # aynı modeli bir kez daha dene
-                attempt_log.append(f"{model_name}: {e}")
-                if not is_per_minute:
-                    _mark_model_dead(model_name)  # günlük kota / kalıcı hata -> bugün atla
-                break  # sıradaki modele geç
-    raise RuntimeError("Tüm modeller denendi, hiçbiri sonuç vermedi:\n" + "\n".join(attempt_log))
+    return response
 
 # =========================================================
 # ÜST BAŞLIK + TARİH/SAAT + GÜNLÜK SAYAÇ
@@ -389,7 +347,7 @@ with sag_sutun:
                 ...
                 """
 
-                response, used_model = generate_with_fallback([prompt, image])
+                response = generate_once([prompt, image])
                 blocks = parse_blocks(response.text)
 
                 if blocks["BASLIK"]:
@@ -411,10 +369,7 @@ with sag_sutun:
                 yeni_sayac = increment_today_count()
 
                 st.info("💡 Yapay zeka aracılığıyla yüklediğiniz görsel analiz edilerek oluşturulan ürün bilgileri otomasyonudur. Lütfen kullanmadan önce okuyarak gerekli revize işlemlerinden sonra içerikleri uygulayınız.")
-                st.caption(f"🔧 Kullanılan model: `{used_model}`  •  Bugünkü toplam kullanım: {yeni_sayac}  •  Başlık uzunluğu: {len(blocks['BASLIK'])}/76")
-                bugun_olu = _dead_models_today()
-                if bugun_olu:
-                    st.caption(f"⚠️ Bugün kotası/erişimi tükenmiş modeller (atlanıyor): {', '.join(sorted(bugun_olu))}")
+                st.caption(f"🔧 Kullanılan model: `{MODEL_NAME}`  •  Bugünkü toplam kullanım: {yeni_sayac}  •  Başlık uzunluğu: {len(blocks['BASLIK'])}/76")
 
                 if is_english and blocks["TR_BASLIK"]:
                     tab1, tab2 = st.tabs(["🇬🇧 İngilizce (Orijinal)", "🇹🇷 Türkçe Çevirisi (Kontrol İçin)"])
