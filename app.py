@@ -2,9 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import re
-import json
-import os
-from datetime import date, datetime
 
 # =========================================================
 # SAYFA AYARLARI
@@ -42,39 +39,11 @@ if not check_password():
 # =========================================================
 # MODEL
 # Tek, sabit bir model kullanılıyor — birden fazla modeli sırayla deneyen
-# fallback mekanizması kaldırıldı, çünkü her tıklamada 3-4 ayrı isteğe mal
-# olup kotayı gereksiz yere çok daha hızlı tüketiyordu.
-# Google bu modeli kaldırır/değiştirirse, tek yapman gereken bu satırı
-# güncellemek (hata mesajı zaten hangi modele geçmen gerektiğini söylüyor).
+# fallback mekanizması yok, böylece her tıklama tam olarak 1 isteğe mal oluyor.
+# Google bu modeli kaldırır/değiştirirse, tek yapman gereken bu satırı güncellemek
+# (hata mesajı zaten hangi modele geçmen gerektiğini söylüyor).
 # =========================================================
 MODEL_NAME = "gemini-3.6-flash"
-
-COUNTER_FILE = "usage_counter.json"
-
-def _load_counter_data():
-    if os.path.exists(COUNTER_FILE):
-        try:
-            with open(COUNTER_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def get_today_count():
-    data = _load_counter_data()
-    return data.get(date.today().isoformat(), 0)
-
-def increment_today_count():
-    today_key = date.today().isoformat()
-    data = _load_counter_data()
-    data[today_key] = data.get(today_key, 0) + 1
-    # sadece son 14 günü tut, dosya şişmesin
-    if len(data) > 14:
-        for k in sorted(data.keys())[:-14]:
-            data.pop(k, None)
-    with open(COUNTER_FILE, "w") as f:
-        json.dump(data, f)
-    return data[today_key]
 
 # =========================================================
 # HAFIZA (Session State)
@@ -83,6 +52,8 @@ if "boyutlar" not in st.session_state:
     st.session_state.boyutlar = []
 if "renkler" not in st.session_state:
     st.session_state.renkler = []
+if "sekiller" not in st.session_state:
+    st.session_state.sekiller = []
 
 def boyut_ekle():
     val = st.session_state.boyut_input.strip()
@@ -95,6 +66,12 @@ def renk_ekle():
     if val and val not in st.session_state.renkler:
         st.session_state.renkler.append(val)
     st.session_state.renk_input = ""
+
+def sekil_ekle():
+    val = st.session_state.sekil_input.strip()
+    if val and val not in st.session_state.sekiller:
+        st.session_state.sekiller.append(val)
+    st.session_state.sekil_input = ""
 
 # =========================================================
 # YARDIMCI FONKSİYONLAR
@@ -110,11 +87,25 @@ def parse_blocks(text):
         blocks[tag_name] = text[start_pos:end_pos].strip()
     return blocks
 
-def clean_tags(tag_str):
-    return ", ".join([t.strip()[:20] for t in tag_str.split(',') if t.strip()])
+def clean_tags(tag_str, max_len=20):
+    """Her tag'i kelime ortasından kesmeden, boşluk dahil max_len karakteri
+    KESİNLİKLE geçmeyecek şekilde kırpar."""
+    cleaned = []
+    for t in tag_str.split(','):
+        t = t.strip()
+        if not t:
+            continue
+        if len(t) > max_len:
+            cut = t[:max_len]
+            if " " in cut:
+                cut = cut.rsplit(" ", 1)[0]
+            t = cut.strip(" ,.-")
+        if t:
+            cleaned.append(t)
+    return ", ".join(cleaned)
 
-def trim_title(title, max_len=76):
-    """Başlığı 76 karakteri geçmeyecek şekilde, kelime ortasından kesmeden kısaltır."""
+def trim_title(title, max_len=140):
+    """Başlığı max_len karakteri geçmeyecek şekilde, kelime ortasından kesmeden kısaltır."""
     title = title.strip()
     if len(title) <= max_len:
         return title
@@ -196,13 +187,9 @@ def generate_once(prompt_parts):
     return response
 
 # =========================================================
-# ÜST BAŞLIK + TARİH/SAAT + GÜNLÜK SAYAÇ
+# ÜST BAŞLIK
 # =========================================================
 st.title("meymet.com | Görsel Analiziyle Ücretsiz Hızlı SEO Otomasyonu")
-
-simdi = datetime.now()
-bugun_sayac = get_today_count()
-st.caption(f"📅 {simdi.strftime('%d.%m.%Y %H:%M')}  •  Bugün {bugun_sayac} kez kullanıldı")
 
 API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=API_KEY)
@@ -234,12 +221,6 @@ with sol_sutun:
     with i2:
         ipucu = "Örn: Dünya temalı logo..." if is_digital else "Örn: Beyaz vinil çıkartma..."
         urun_tanimi = st.text_area("Bu ürün nedir? (İpucu):", placeholder=ipucu, height=100)
-
-    focus_keyword = st.text_input(
-        "🎯 Odak Anahtar Kelime (Focus Keyword):",
-        placeholder="Örn: personalized dog necklace",
-        help="Başlığın en başında ve açıklamanın ilk 140 karakterinde bu kelime geçecek. Etsy'de en çok aranan, ürünü en iyi tanımlayan kelimeyi yaz."
-    )
 
     st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
 
@@ -273,6 +254,20 @@ with sol_sutun:
 
     st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
 
+    col_s_input, col_s_list = st.columns(2)
+    with col_s_input:
+        st.text_input("Şekil (Enter'a bas):", key="sekil_input", on_change=sekil_ekle)
+    with col_s_list:
+        st.caption("Eklenenler:")
+        for item in st.session_state.sekiller:
+            c_text, c_btn = st.columns([4, 1])
+            c_text.write(f"▪️ {item}")
+            if c_btn.button("❌", key=f"del_s_{item}"):
+                st.session_state.sekiller.remove(item)
+                st.rerun()
+
+    st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+
     ekstra_not = st.text_area("Ekstra Not (Opsiyonel):", height=60)
 
     uret_btn = st.button("✨ İçerikleri Üret", type="primary", use_container_width=True)
@@ -282,17 +277,14 @@ with sol_sutun:
 # =========================================================
 with sag_sutun:
     if uret_btn and uploaded_file is not None:
-        if not focus_keyword.strip():
-            st.warning("⚠️ Odak anahtar kelime girmeden de devam edebilirsin, ama başlık ve açıklama SEO açısından daha güçlü olsun istiyorsan doldurman önerilir.")
-
         try:
             with st.spinner("Görsel analiz ediliyor, içerikler hazırlanıyor..."):
                 target_language = "ENGLISH" if is_english else "TURKISH"
                 product_hint = f"\nThe user describes this product as: '{urun_tanimi}'." if urun_tanimi else ""
-                focus_hint = f"\nFOCUS KEYWORD: '{focus_keyword.strip()}'." if focus_keyword.strip() else ""
 
                 size_hint = f"\nAvailable sizes/ratios: {', '.join(st.session_state.boyutlar)}." if st.session_state.boyutlar else ""
                 color_hint = f"\nAvailable colors/formats: {', '.join(st.session_state.renkler)}." if st.session_state.renkler else ""
+                shape_hint = f"\nAvailable shapes: {', '.join(st.session_state.sekiller)}." if st.session_state.sekiller else ""
 
                 if is_digital:
                     base_instruction = "You are an expert Etsy SEO copywriter focusing on DIGITAL DOWNLOAD products. CRITICAL: Emphasize that this is an INSTANT DIGITAL DOWNLOAD. NO physical item will be shipped."
@@ -302,40 +294,40 @@ with sag_sutun:
                 translation_instruction = ""
                 if is_english:
                     translation_instruction = """
-                    6. Translation (CRITICAL): Since the target language is ENGLISH, you MUST ALSO provide the exact TURKISH translation of your generated Title, Description, and Tags. Append them at the very end using these exact tags: [TR_BASLIK], [TR_ACIKLAMA], [TR_ETIKETLER].
+                    === TRANSLATION RULES (CRITICAL) ===
+                    Since the target language is ENGLISH, you MUST ALSO provide the exact TURKISH translation of your generated Title, Description, and Tags. Append them at the very end using these exact tags: [TR_BASLIK], [TR_ACIKLAMA], [TR_ETIKETLER].
                     """
 
                 prompt = f"""
                 {base_instruction}
                 {product_hint}
-                {focus_hint}
                 {size_hint}
                 {color_hint}
+                {shape_hint}
 
                 === TITLE RULES ===
-                - Maximum 76 characters, no exceptions.
-                - The FOCUS KEYWORD must appear at the very beginning of the title.
-                - The first 30 characters alone must already make it clear what the product is.
-                - Write it so a human reads it naturally — this is NOT a keyword list, it's a real title.
-                - Do NOT repeat the same word twice. Do NOT stuff keywords back to back.
-                - Avoid generic "spammy AI title" patterns (e.g. excessive pipes "|", ALL CAPS words, redundant phrases like "Best Gift Ever Unique Special").
-                - Keep it clean, simple, and readable.
+                - Maximum 140 characters, no exceptions.
+                - The FIRST 5 WORDS must be fully, directly related to the actual product (no filler, no generic words before the product is named).
+                - Persuasive and convincing — make the buyer want to click, while staying honest and specific to the image.
+                - Do NOT repeat the same word or use near-synonym phrases of each other back to back (no keyword stuffing, no spammy repetition).
+                - Write it so a human reads it naturally — this is a real title, not a keyword list. Clean, simple, readable.
 
                 === DESCRIPTION RULES ===
-                Write EXACTLY 3 paragraphs, structured as follows:
-                - PARAGRAPH 1 (Product description): The FOCUS KEYWORD must appear within the first 140 characters of the whole description. Clearly and naturally explain what the product is and its main purpose. Warm, human, non-generic opening — avoid cliché AI phrases like "Elevate your space" or "Looking for the perfect gift?". Make it specific to what is visible in the uploaded reference image.
-                - PARAGRAPH 2 (Technical specifications, AS A BULLET LIST): Start with one short intro sentence, then list technical details as bullet points (each line starting with "• "). Naturally include materials, sizes, and colors/formats provided by the user in these bullets. Every important word used in the tags should appear at least once somewhere across the full description.
-                - PARAGRAPH 3 (Why / who should choose this, AS A BULLET LIST): Start with one short intro sentence, then list bullet points (each line starting with "• ") explaining why customers should buy this and who it's ideal for (e.g. occasions, recipients, use cases). End the LAST bullet or the line right after the bullets with one short, warm, sincere call-to-action sentence encouraging the buyer to save/favorite the listing — written naturally, not like generic marketing copy. Example tone to draw inspiration from (do not copy verbatim, write an original sentence in the same spirit): "If this little detail made you smile, save it to your favorites so you don't lose it."
+                Write EXACTLY 3 paragraphs. Each paragraph MUST start with a short, warm heading on its own line, prefixed with ONE cute/friendly emoji (vary the emoji per paragraph, e.g. 💛 📦 ✨ 🎀 🤍 — pick what fits, don't overdo it, just one emoji per heading). Structure:
+                - PARAGRAPH 1: Warm, natural, flowing language — as if written by a small, sincere handmade-business owner. Naturally weave in the key words from the Title (don't just repeat the title verbatim). Add a light, genuine emotional touch (e.g. gratitude for the customer's support, the care put into making this) — warm, not cheesy or salesy.
+                - PARAGRAPH 2: Technical specifications AS A BULLET LIST (each line starting with "• "). Naturally include materials, sizes, colors/formats and shapes provided by the user. Keep the tone warm and sincere even while listing specs, not dry/robotic.
+                - PARAGRAPH 3: Who would love this product and why, AS A BULLET LIST (each line starting with "• "), warm and sincere tone — occasions, recipients, use cases. End with one short, warm, sincere closing sentence (not generic marketing language) that makes the buyer feel the product was made with care.
                 - Do NOT use keyword stuffing anywhere. Do NOT repeat the same word unnecessarily across paragraphs.
 
                 === TAG RULES (Long-Tail SEO) ===
                 - Write exactly 13 SEO tags separated by commas.
-                - Use multi-word long-tail keywords, each 20 characters or less.
+                - ABSOLUTE HARD LIMIT: each tag, INCLUDING SPACES, must be 20 characters or fewer. Never exceed this, under any circumstance.
+                - Use multi-word long-tail keyword phrases that best match this specific product.
+                - Do NOT create alternate tags by just swapping/deriving from the same root word (e.g. do not make "dog gift", "dog gifts", "gift for dog" all appear — pick the single best phrasing and use the remaining slots for genuinely different, relevant angles).
                 - Every tag must be genuinely relevant to this specific product — no generic, randomly-generated filler tags.
-                - Avoid overly competitive one-word tags; prefer natural longer phrases a real buyer would search.
 
                 === NO HALLUCINATIONS (CRITICAL) ===
-                Do NOT invent, assume, or add ANY file formats (e.g., SVG, PDF, EPS), colors, or sizes that are not explicitly provided by the user in the lists above. If the user did not specify a format, DO NOT mention one.
+                Do NOT invent, assume, or add ANY file formats (e.g., SVG, PDF, EPS), colors, sizes, or shapes that are not explicitly provided by the user in the lists above. If the user did not specify one, DO NOT mention it.
                 {translation_instruction}
 
                 FORMAT STRICTLY AS FOLLOWS (DO NOT add any conversational text outside these tags):
@@ -361,31 +353,28 @@ with sag_sutun:
                     blocks["TR_ETIKETLER"] = clean_tags(blocks["TR_ETIKETLER"])
 
                 if ekstra_not:
-                    note_prefix_en = "**Note:** " if is_english else "**Not:** "
-                    blocks["ACIKLAMA"] += f"\n\n---\n{note_prefix_en}{ekstra_not}"
+                    blocks["ACIKLAMA"] += f"\n• {ekstra_not}"
                     if is_english and blocks["TR_ACIKLAMA"]:
-                        blocks["TR_ACIKLAMA"] += f"\n\n---\n**Not:** {ekstra_not}"
-
-                yeni_sayac = increment_today_count()
+                        blocks["TR_ACIKLAMA"] += f"\n• {ekstra_not}"
 
                 st.info("💡 Yapay zeka aracılığıyla yüklediğiniz görsel analiz edilerek oluşturulan ürün bilgileri otomasyonudur. Lütfen kullanmadan önce okuyarak gerekli revize işlemlerinden sonra içerikleri uygulayınız.")
-                st.caption(f"🔧 Kullanılan model: `{MODEL_NAME}`  •  Bugünkü toplam kullanım: {yeni_sayac}  •  Başlık uzunluğu: {len(blocks['BASLIK'])}/76")
+                st.caption(f"🔧 Kullanılan model: `{MODEL_NAME}`  •  Başlık uzunluğu: {len(blocks['BASLIK'])}/140")
 
                 if is_english and blocks["TR_BASLIK"]:
                     tab1, tab2 = st.tabs(["🇬🇧 İngilizce (Orijinal)", "🇹🇷 Türkçe Çevirisi (Kontrol İçin)"])
 
                     with tab1:
                         st.text_area("Başlık", blocks["BASLIK"], label_visibility="collapsed")
-                        st.text_area("Açıklama", blocks["ACIKLAMA"], height=300, label_visibility="collapsed")
+                        st.text_area("Açıklama", blocks["ACIKLAMA"], height=320, label_visibility="collapsed")
                         st.text_area("Etiketler", blocks["ETIKETLER"], label_visibility="collapsed")
 
                     with tab2:
                         st.text_area("TR Başlık", blocks["TR_BASLIK"], label_visibility="collapsed")
-                        st.text_area("TR Açıklama", blocks["TR_ACIKLAMA"], height=300, label_visibility="collapsed")
+                        st.text_area("TR Açıklama", blocks["TR_ACIKLAMA"], height=320, label_visibility="collapsed")
                         st.text_area("TR Etiketler", blocks["TR_ETIKETLER"], label_visibility="collapsed")
                 else:
                     st.text_area("Başlık", blocks["BASLIK"], label_visibility="collapsed")
-                    st.text_area("Açıklama", blocks["ACIKLAMA"], height=300, label_visibility="collapsed")
+                    st.text_area("Açıklama", blocks["ACIKLAMA"], height=320, label_visibility="collapsed")
                     st.text_area("Etiketler", blocks["ETIKETLER"], label_visibility="collapsed")
 
         except Exception as e:
